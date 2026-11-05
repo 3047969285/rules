@@ -1,0 +1,14 @@
+{
+  "name": "rule-hub",
+  "owner": {
+    "name": "local"
+  },
+  "plugins": [
+    {
+      "name": "rule-hub",
+      "source": "./",
+      "description": "单一规则源生成各工具格式并校验，附 Java 守卫、规则路由和结束前编译闸门"
+    }
+  ],
+  "description": "本地规则体系插件"
+}
