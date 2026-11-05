@@ -90,7 +90,7 @@ def validate(rel, content):
     out = []
     if content.startswith("﻿") or "\r" in content:
         out.append("含 BOM 或 CRLF")
-    if rel.endswith(".txt"):
+    if rel.endswith((".txt", ".toml")):
         return out
     m = re.match(r"\A---\n(.*?)\n---\n", content, re.S)
     if not m:

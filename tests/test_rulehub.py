@@ -9,7 +9,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from rulehub import history, launchd, status  # noqa: E402
+from rulehub import history, launchd, reviewer, status  # noqa: E402
 from rulehub import targets as T  # noqa: E402
 from rulehub.cli import main  # noqa: E402
 from rulehub.model import duplicate_lines, expand_glob, fix_source, load_rules  # noqa: E402
@@ -283,8 +283,10 @@ class ImportTests(Base):
 class HookRunner:
     HOOKS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "hooks")
 
-    def call(self, script, payload, config=None):
-        env = dict(os.environ, RULEHUB_CONFIG=config or "/nonexistent.json")
+    def call(self, script, payload, config=None, extra_env=None):
+        env = dict(os.environ, RULEHUB_CONFIG=config or "/nonexistent.json", RULEHUB_VIOLATIONS=os.devnull,
+                   RULEHUB_REVIEWER_CMD="/usr/bin/false")
+        env.update(extra_env or {})
         r = subprocess.run([sys.executable, os.path.join(self.HOOKS, script)], input=json.dumps(payload),
                            capture_output=True, text=True, env=env)
         self.assertEqual(r.returncode, 0, r.stderr)
@@ -353,6 +355,18 @@ class RouterAndGateTests(HookRunner, unittest.TestCase):
             self.assertNotIn("命中按任务技能", self.route(harmless), harmless)
         for hit in ("帮我写个 Java 接口", "改一下 UserMapper.xml 里的 mapper", "处理黄岛的 xlsx 模板"):
             self.assertIn("命中按任务技能", self.route(hit), hit)
+
+    def test_prompt_scaffold_leaves_the_role_to_the_model(self):
+        def ask(prompt):
+            out = self.call("rule_router.py", {"prompt": prompt})
+            return json.loads(out)["hookSpecificOutput"]["additionalContext"]
+        for prompt in ("帮我写个 Java 接口", "设计一个 Dify 工作流", "你好"):
+            msg = ask(prompt)
+            for expect in ("#role: （你判断：随任务变化", "#task:", "#约束:", "身份随任务自己判断，不固定"):
+                self.assertIn(expect, msg)
+            for gone in ("Java 后端资深专家", "Dify 与模型应用开发专家", "#rule", "#输入", "#输出", "#上下文"):
+                self.assertNotIn(gone, msg)
+        self.assertIn("先用 Skill 工具加载 rule-hub:backend-flow", ask("帮我写个 Java 接口"))
 
     def test_gate_ignores_non_build_projects_and_accepts_real_builds(self):
         with tempfile.TemporaryDirectory() as d:
@@ -460,6 +474,378 @@ class StatusAndDoctorTests(Base):
         self.assertIn("StartInterval", out)
         self.assertIn("/usr/bin/python3", out)
         self.assertFalse(os.path.exists(launchd.plist_path(self.home)))
+
+
+class UnreadableSourceTests(Base):
+    def test_permission_error_is_reported_not_hidden(self):
+        locked = os.path.join(self.src, "b")
+        os.chmod(locked, 0)
+        self.addCleanup(os.chmod, locked, 0o755)
+        code, _, err = self.sync()
+        self.assertEqual(code, 2)
+        self.assertIn("读取规则源失败", err)
+        self.assertNotIn("没有任何规则", err)
+
+
+class PreWriteGuardTests(HookRunner, unittest.TestCase):
+    BAD_JAVA = "public class A {\n    public void f() {\n        Pattern p = Pattern.compile(\"a\");\n    }\n}\n"
+    GOOD_JAVA = "public class A {\n    private static final Pattern P = Pattern.compile(\"a\");\n}\n"
+
+    def pre(self, path, **tool_input):
+        out = self.call("java_guard.py", {"hook_event_name": "PreToolUse", "tool_input": dict(tool_input, file_path=path)})
+        return json.loads(out)["hookSpecificOutput"] if out else None
+
+    def test_write_with_violation_is_denied_before_writing(self):
+        got = self.pre("/p/A.java", content=self.BAD_JAVA)
+        self.assertEqual(got["permissionDecision"], "deny")
+        self.assertIn("Pattern.compile", got["permissionDecisionReason"])
+        self.assertIn("3:", got["permissionDecisionReason"])
+
+    def test_clean_content_and_non_java_pass(self):
+        self.assertIsNone(self.pre("/p/A.java", content=self.GOOD_JAVA))
+        self.assertIsNone(self.pre("/p/notes.md", content=self.BAD_JAVA))
+
+    def test_edit_and_multiedit_are_checked(self):
+        self.assertEqual(self.pre("/p/A.java", old_string="x", new_string="        throw new RuntimeException(\"x\");")["permissionDecision"], "deny")
+        got = self.pre("/p/A.java", edits=[{"old_string": "a", "new_string": "new Thread(r).start();"}])
+        self.assertEqual(got["permissionDecision"], "deny")
+
+    def test_comments_are_ignored(self):
+        self.assertIsNone(self.pre("/p/A.java", content="// throw new RuntimeException(\"x\")\n/* new Thread() */\n"))
+
+    def test_mapper_xml_checked_but_pom_is_not(self):
+        sql = "<mapper><select id=\"a\">select * from t where id = ${id}</select></mapper>"
+        self.assertEqual(self.pre("/p/UserMapper.xml", content=sql)["permissionDecision"], "deny")
+        self.assertIsNone(self.pre("/p/pom.xml", content="<project>${revision}</project>"))
+
+    def test_test_file_still_asks_and_deny_wins(self):
+        self.assertEqual(self.pre("/p/src/test/FooTest.java", content=self.GOOD_JAVA)["permissionDecision"], "ask")
+        self.assertEqual(self.pre("/p/src/test/FooTest.java", content=self.BAD_JAVA)["permissionDecision"], "deny")
+
+
+class BudgetTests(Base):
+    def test_always_budget_is_a_hard_limit(self):
+        self.sync()
+        base = ("--source", self.src, "--home", self.home)
+        self.assertEqual(run(*base, "check")[0], 0)
+        write(os.path.join(self.src, "a", "core-always.mdc"), ALWAYS + "字" * 4000)
+        code, out, _ = run(*base, "check")
+        self.assertEqual(code, 1)
+        self.assertIn("硬上限", out)
+        self.assertEqual(run(*base, "doctor")[0], 1)
+        code, _, err = self.sync()
+        self.assertEqual(code, 0)
+        self.assertIn("超过硬上限", err)
+
+
+class EnforcementTests(Base):
+    def reg(self, data):
+        write(os.path.join(self.src, "enforcers.json"), json.dumps(data, ensure_ascii=False))
+
+    def test_report_groups_and_strict(self):
+        self.reg({"core-always": {"hooks": ["h1"], "manual": "其余靠自觉"},
+                  "java-scoped": {"manual": "判断类", "gap": "可机检未做"},
+                  "gone": {"manual": "已删除的规则"}})
+        code, out, _ = run("--source", self.src, "enforcement")
+        self.assertEqual(code, 0)
+        self.assertIn("== 机器执行 1 条", out)
+        self.assertIn("== 靠自觉 1 条", out)
+        self.assertIn("== 未登记 1 条", out)
+        self.assertIn("on-demand", out)
+        self.assertIn("== 已知缺口 1 条", out)
+        self.assertIn("gone 已没有对应规则", out)
+        self.assertEqual(run("--source", self.src, "enforcement", "--strict")[0], 1)
+
+    def test_strict_passes_when_complete_and_registry_is_not_a_rule(self):
+        self.reg({"core-always": {"hooks": ["h"]}, "java-scoped": {"manual": "m"}, "on-demand": {"manual": "m"}})
+        self.assertEqual(run("--source", self.src, "enforcement", "--strict")[0], 0)
+        self.assertEqual(len(load_rules(self.src)[0]), 3)
+        self.assertEqual(run("--source", self.src, "lint")[0], 0)
+
+    def test_doctor_reports_unregistered(self):
+        self.sync()
+        self.assertIn("[warn] 3 条规则没登记执行者", run("--source", self.src, "--home", self.home, "doctor")[1])
+        self.reg({"core-always": {"manual": "m"}, "java-scoped": {"manual": "m"}, "on-demand": {"manual": "m"}})
+        self.assertIn("[ok] 每条规则都登记了", run("--source", self.src, "--home", self.home, "doctor")[1])
+
+
+class SecretGuardTests(HookRunner, unittest.TestCase):
+    AWS = "AKIA" + "ABCDEFGHIJKLMNOP"
+    GH = "ghp_" + "a1B2c3D4" * 5
+    PEM = "-----BEGIN " + "RSA PRIVATE KEY-----"
+    SK = "sk-ant-" + "api03" + "q" * 30
+    PW = "Tr0ub4dor" + "&3"
+
+    def pre(self, **tool_input):
+        out = self.call("secret_guard.py", {"hook_event_name": "PreToolUse", "tool_input": dict(tool_input, file_path="/p/f.txt")})
+        return json.loads(out)["hookSpecificOutput"] if out else None
+
+    def test_hard_formats_are_denied_and_masked(self):
+        for secret in (self.AWS, self.GH, self.PEM, self.SK):
+            got = self.pre(content=f"line1\nkey = {secret}\n")
+            self.assertEqual(got["permissionDecision"], "deny", secret)
+            self.assertIn("2:", got["permissionDecisionReason"])
+            self.assertNotIn(secret, got["permissionDecisionReason"])
+
+    def test_soft_cases_ask(self):
+        for text in (f'password = "{self.PW}"', f"url: postgres://admin:{self.PW}@db.corp.example/app",
+                     f"jdbc:mysql://db/app?user=a&password={self.PW}"):
+            got = self.pre(content=text)
+            self.assertEqual(got["permissionDecision"], "ask", text)
+            self.assertNotIn(self.PW, got["permissionDecisionReason"])
+
+    def test_placeholders_local_hosts_and_allow_marker_pass(self):
+        for text in ('password = "${DB_PASSWORD}"', 'api_key = "<your-api-key>"', 'token = os.environ["API_TOKEN_X1"]',
+                     f"postgres://root:{self.PW}@localhost/app", f"key = {self.AWS}  # rulehub:allow-secret",
+                     'password = "changeme-please"', "没有任何凭证的普通文本", "url = f\"postgres://admin:{pw}@db.corp/app\""):
+            self.assertIsNone(self.pre(content=text), text)
+
+    def test_application_config_files_may_hold_passwords_but_not_tokens(self):
+        def at(path, text):
+            out = self.call("secret_guard.py", {"hook_event_name": "PreToolUse", "tool_input": {"file_path": path, "content": text}})
+            return json.loads(out)["hookSpecificOutput"]["permissionDecision"] if out else None
+        pw = f'api-secret: "{self.PW}"'
+        self.assertIsNone(at("/p/src/main/resources/application.yml", pw))
+        self.assertIsNone(at("/p/application-prod.properties", f"db.password={self.PW}\nspring.datasource.url=jdbc:mysql://h/a?password={self.PW}"))
+        self.assertEqual(at("/p/src/Config.java", pw), "ask")
+        self.assertEqual(at("/p/other.yml", pw), "ask")
+        self.assertEqual(at("/p/application.yml", f"key: {self.AWS}"), "deny")
+
+    def test_edit_multiedit_and_switch(self):
+        self.assertEqual(self.pre(old_string="a", new_string=self.AWS)["permissionDecision"], "deny")
+        self.assertEqual(self.pre(edits=[{"old_string": "a", "new_string": self.GH}])["permissionDecision"], "deny")
+        with tempfile.TemporaryDirectory() as d:
+            cfg = os.path.join(d, "c.json")
+            write(cfg, json.dumps({"hooks": {"secret_guard": False}}))
+            payload = {"hook_event_name": "PreToolUse", "tool_input": {"file_path": "/p/f", "content": self.AWS}}
+            self.assertEqual(self.call("secret_guard.py", payload, cfg), "")
+
+
+class JavaScopeTests(HookRunner, unittest.TestCase):
+    BAD = "public class A {\n    public void f() {\n        Pattern p = Pattern.compile(\"a\");\n    }\n}\n"
+
+    def test_guard_and_gate_only_apply_inside_scope(self):
+        with tempfile.TemporaryDirectory() as d:
+            mine, other = os.path.join(d, "mine"), os.path.join(d, "other")
+            cfg = os.path.join(d, "c.json")
+            write(cfg, json.dumps({"java_scope": [mine]}))
+            for root in (mine, other):
+                write(os.path.join(root, "pom.xml"), "<project/>")
+                write(os.path.join(root, "A.java"), self.BAD)
+            def guard(root, event):
+                return self.call("java_guard.py", {"hook_event_name": event, "tool_input": {"file_path": os.path.join(root, "A.java"), "content": self.BAD}}, cfg)
+            for event in ("PreToolUse", "PostToolUse"):
+                self.assertNotEqual(guard(mine, event), "", event)
+                self.assertEqual(guard(other, event), "", event)
+            def gate(root):
+                t = os.path.join(d, "t.jsonl")
+                write(t, json.dumps({"message": {"content": [{"type": "tool_use", "name": "Write", "input": {"file_path": os.path.join(root, "A.java")}}]}}) + "\n")
+                return self.call("stop_gate.py", {"transcript_path": t}, cfg)
+            self.assertIn("block", gate(mine))
+            self.assertEqual(gate(other), "")
+
+    def test_no_scope_means_everywhere_and_prefix_is_not_a_match(self):
+        with tempfile.TemporaryDirectory() as d:
+            mine = os.path.join(d, "proj")
+            sibling = os.path.join(d, "proj-other")
+            cfg = os.path.join(d, "c.json")
+            payload = lambda root: {"hook_event_name": "PreToolUse", "tool_input": {"file_path": os.path.join(root, "A.java"), "content": self.BAD}}
+            self.assertNotEqual(self.call("java_guard.py", payload(sibling)), "")
+            write(cfg, json.dumps({"java_scope": [mine]}))
+            self.assertEqual(self.call("java_guard.py", payload(sibling), cfg), "")
+
+
+def U(text):
+    return {"type": "user", "message": {"role": "user", "content": text}}
+
+
+def USE(uid, name, **inp):
+    return {"type": "assistant", "message": {"content": [{"type": "tool_use", "id": uid, "name": name, "input": inp}]}}
+
+
+def RES(uid, text="ok"):
+    return {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": uid, "content": text}]}}
+
+
+def SAY(text):
+    return {"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}}
+
+
+class EvidenceGateTests(HookRunner, unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.proj = os.path.join(self.tmp.name, "proj")
+        os.makedirs(os.path.join(self.proj, "tests"))
+        os.makedirs(os.path.join(self.proj, "src"))
+        self.code = os.path.join(self.proj, "src", "a.py")
+
+    def gate(self, entries, config=None, env=None, active=False):
+        t = os.path.join(self.tmp.name, "t.jsonl")
+        write(t, "\n".join(json.dumps(e, ensure_ascii=False) for e in entries) + "\n")
+        cfg = None
+        if config is not None:
+            cfg = os.path.join(self.tmp.name, "c.json")
+            write(cfg, json.dumps(config))
+        out = self.call("evidence_gate.py", {"transcript_path": t, "stop_hook_active": active}, cfg, env)
+        return json.loads(out) if out else None
+
+    def stub(self, reply, record=None):
+        path = os.path.join(self.tmp.name, "stub.sh")
+        write(path, "#!/bin/sh\n" + (f"cat > {record}\n" if record else "cat > /dev/null\n") + f"cat <<'EOF'\n{reply}\nEOF\n")
+        os.chmod(path, 0o755)
+        return {"RULEHUB_REVIEWER_CMD": path}
+
+    def test_claim_without_any_tool_is_blocked(self):
+        got = self.gate([U("验证过了吗"), SAY("已验证通过")])
+        self.assertEqual(got["decision"], "block")
+        self.assertIn("没有调用任何工具", got["reason"])
+        self.assertIsNone(self.gate([U("你好"), SAY("你好呀")]))
+
+    def test_plans_and_negations_are_not_claims_but_real_claims_are(self):
+        for ok in ("接下来我会用新会话实测一下", "还没有实测", "未验证通过，需要再看", "没有全部通过", "我准备跑通它"):
+            self.assertIsNone(self.gate([U("x"), SAY(ok)]), ok)
+        for bad in ("已实测通过", "实测结果正常", "验证通过了", "测试全部通过", "已完成"):
+            self.assertEqual(self.gate([U("x"), SAY(bad)])["decision"], "block", bad)
+
+    def test_edit_then_claim_needs_a_command_after_the_edit(self):
+        edit = [U("改一下"), USE("1", "Write", file_path=self.code), RES("1")]
+        got = self.gate(edit + [SAY("改好了，测试通过")])
+        self.assertIn("没有运行任何命令", got["reason"])
+        self.assertIsNone(self.gate(edit + [SAY("改好了")]))
+
+    def test_project_with_tests_needs_a_test_command(self):
+        base = [U("改"), USE("1", "Edit", file_path=self.code), RES("1"), USE("2", "Bash", command="ls"), RES("2")]
+        got = self.gate(base + [SAY("全部通过")])
+        self.assertIn("有测试", got["reason"])
+        ok = [U("改"), USE("1", "Edit", file_path=self.code), RES("1"),
+              USE("2", "Bash", command="python3 -m unittest discover"), RES("2"), SAY("全部通过")]
+        self.assertIsNone(self.gate(ok))
+
+    def test_non_code_edits_and_stop_hook_active_pass(self):
+        memo = os.path.join(self.tmp.name, "memory", "x.md")
+        self.assertIsNone(self.gate([U("记一下"), USE("1", "Write", file_path=memo), RES("1"), SAY("已完成")]))
+        self.assertIsNone(self.gate([U("x"), SAY("已验证通过")], active=True))
+
+    def test_switches(self):
+        entries = [U("x"), SAY("已验证通过")]
+        self.assertIsNone(self.gate(entries, config={"hooks": {"evidence_gate": False}}))
+        self.assertIsNone(self.gate(entries, env={"RULEHUB_REVIEW": "1"}))
+
+    def test_reviewer_findings_block_and_are_advisory_text(self):
+        turn = [U("看看"), USE("1", "Bash", command="ls"), RES("1", "a b"), SAY("目录里有两个文件")]
+        reply = '{"violations":[{"rule":"code-first-facts","evidence":"没有读文件就下了结论"},{"rule":"不存在的规则","evidence":"x"}]}'
+        got = self.gate(turn, env=self.stub(reply))
+        self.assertEqual(got["decision"], "block")
+        self.assertIn("[code-first-facts] 没有读文件就下了结论", got["reason"])
+        self.assertIn("裁决者", got["reason"])
+        self.assertNotIn("不存在的规则", got["reason"])
+
+    def test_reviewer_clean_broken_or_disabled_never_blocks(self):
+        turn = [U("看看"), USE("1", "Bash", command="ls"), RES("1"), SAY("两个文件")]
+        for reply in ('{"violations":[]}', "胡言乱语", '{"violations":[{"rule":"code-first-facts","evidence":""}]}'):
+            self.assertIsNone(self.gate(turn, env=self.stub(reply)), reply)
+        bad = '{"violations":[{"rule":"code-first-facts","evidence":"x"}]}'
+        self.assertIsNone(self.gate(turn, config={"hooks": {"rule_review": False}}, env=self.stub(bad)))
+        self.assertIsNone(self.gate(turn))
+
+    def test_reviewer_input_is_redacted_and_contains_the_turn(self):
+        record = os.path.join(self.tmp.name, "seen.txt")
+        key = "AKIA" + "ABCDEFGHIJKLMNOP"
+        turn = [U("看看"), USE("1", "Bash", command=f"echo {key}"), RES("1", "输出"), SAY("好了")]
+        self.gate(turn, env=self.stub('{"violations":[]}', record))
+        seen = T.read(record)
+        self.assertNotIn(key, seen)
+        self.assertIn("[已脱敏]", seen)
+        self.assertIn("用户原话:\n看看", seen)
+        self.assertIn("code-first-facts", seen)
+
+    def test_reviewer_sees_test_command_and_result_even_when_buried(self):
+        record = os.path.join(self.tmp.name, "seen2.txt")
+        cmd = "python3 - <<'X'\n" + "print('填充')\n" * 80 + "X\npython3 -m unittest discover -s tests\necho 收尾"
+        out = "Ran 76 tests in 2.3s\n\nOK\n" + "后续无关输出\n" * 60
+        turn = [U("跑测试"), USE("1", "Bash", command=cmd), RES("1", out), SAY("测试全过")]
+        self.gate(turn, env=self.stub('{"violations":[]}', record))
+        seen = T.read(record)
+        self.assertIn("含测试命令: unittest", seen)
+        self.assertIn("Ran 76 tests in 2.3s", seen)
+        self.assertIn("OK", seen)
+
+    def test_reviewer_sees_facts_from_the_middle_of_a_moderate_output(self):
+        record = os.path.join(self.tmp.name, "seen3.txt")
+        out = "头部\n" + "填充\n" * 60 + "/proj/黄岛 -> 是 git 仓库\n" + "尾部填充\n" * 60
+        self.gate([U("查仓库"), USE("1", "Bash", command="git check"), RES("1", out), SAY("黄岛是 git 仓库")],
+                  env=self.stub('{"violations":[]}', record))
+        self.assertIn("/proj/黄岛 -> 是 git 仓库", T.read(record))
+
+    def test_very_long_output_keeps_head_and_tail_and_says_so(self):
+        record = os.path.join(self.tmp.name, "seen4.txt")
+        out = "开头标记\n" + "填" * 5000 + "\n结尾标记"
+        self.gate([U("x"), USE("1", "Bash", command="y"), RES("1", out), SAY("好")], env=self.stub('{"violations":[]}', record))
+        seen = T.read(record)
+        self.assertIn("开头标记", seen)
+        self.assertIn("结尾标记", seen)
+        self.assertIn("中间省略", seen)
+
+    def test_blocks_are_logged(self):
+        log = os.path.join(self.tmp.name, "v.jsonl")
+        self.gate([U("x"), SAY("已验证通过")], env={"RULEHUB_VIOLATIONS": log})
+        row = json.loads(T.read(log).splitlines()[0])
+        self.assertEqual((row["hook"], row["rule"]), ("evidence_gate", "code-first-facts"))
+
+
+class ViolationsAndAgentsTests(Base):
+    def test_guards_log_rule_ids(self):
+        log = os.path.join(self.tmp.name, "v.jsonl")
+        runner = HookRunner()
+        runner.assertEqual = self.assertEqual
+        bad = 'public class A {\n    public void f() {\n        Pattern p = Pattern.compile("a");\n    }\n}\n'
+        runner.call("java_guard.py", {"hook_event_name": "PreToolUse", "tool_input": {"file_path": "/p/A.java", "content": bad}},
+                    extra_env={"RULEHUB_VIOLATIONS": log})
+        row = json.loads(T.read(log).splitlines()[0])
+        self.assertEqual((row["hook"], row["rule"]), ("java_guard", "java-05-code-style"))
+        self.assertNotIn("content", row)
+
+    def test_violations_command(self):
+        log = os.path.join(self.tmp.name, "v.jsonl")
+        write(log, "".join(json.dumps({"t": __import__("time").time(), "hook": h, "rule": r, "detail": "d", "cwd": "/"}) + "\n"
+                           for h, r in (("evidence_gate", "code-first-facts"), ("evidence_gate", "code-first-facts"), ("secret_guard", "security-confidentiality"))))
+        write(os.path.join(self.src, "enforcers.json"), json.dumps(
+            {"core-always": {"manual": "靠自觉"}, "java-scoped": {"hooks": ["h"]}, "on-demand": {"manual": "m"}}))
+        os.environ["RULEHUB_VIOLATIONS"] = log
+        self.addCleanup(os.environ.pop, "RULEHUB_VIOLATIONS", None)
+        code, out, _ = run("--source", self.src, "violations")
+        self.assertEqual(code, 0)
+        self.assertIn("共 3 次", out)
+        self.assertIn("2  code-first-facts", out)
+        self.assertIn("evidence_gate", out)
+        os.remove(log)
+        self.assertIn("还没有违规记录", run("--source", self.src, "violations")[1])
+
+    def test_reviewer_definitions_for_each_tool(self):
+        models = {"claude": "haiku", "codex": "gpt-6-luna", "cursor": "composer-2.5"}
+        codex = reviewer.render_agents("codex", models)["agents/rule-reviewer.toml"]
+        for expect in ('model = "gpt-6-luna"', 'sandbox_mode = "read-only"', "developer_instructions = '''"):
+            self.assertIn(expect, codex)
+        cursor = reviewer.render_agents("cursor", models)["agents/rule-reviewer.md"]
+        self.assertIn("model: composer-2.5", cursor)
+        self.assertIn("readonly: true", cursor)
+        claude = reviewer.render_claude_agent("haiku")
+        self.assertIn("model: haiku", claude)
+        self.assertIn("tools: Read, Grep, Glob", claude)
+        plugin_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "agents", "rule-reviewer.md")
+        self.assertEqual(T.read(plugin_file), claude)
+
+    def test_sync_writes_reviewers_and_honours_config_model(self):
+        cfg = os.path.join(self.tmp.name, "c.json")
+        write(cfg, json.dumps({"reviewers": {"codex": "gpt-9-nano"}}))
+        os.environ["RULEHUB_CONFIG"] = cfg
+        self.addCleanup(os.environ.pop, "RULEHUB_CONFIG", None)
+        code, _, err = self.sync("--target", "codex", "--target", "cursor")
+        self.assertEqual(code, 0, err)
+        self.assertIn('model = "gpt-9-nano"', T.read(self.path(".codex", "agents", "rule-reviewer.toml")))
+        self.assertIn("model: composer-2.5", T.read(self.path(".cursor", "agents", "rule-reviewer.md")))
+        self.assertEqual(run("--source", self.src, "--home", self.home, "--target", "codex", "--target", "cursor", "check")[0], 0)
 
 
 if __name__ == "__main__":

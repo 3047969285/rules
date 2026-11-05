@@ -5,16 +5,18 @@ import os
 import sys
 
 from . import targets as T
-from . import history, launchd, status
+from . import enforcers, history, launchd, status, task
+from .config import read_violations, reviewers
 from .importer import ImportFailed, import_file
 from .model import duplicate_lines, fix_source, load_rules
+from .reviewer import render_agents
 
 CANDIDATES = [
     "~/Library/Mobile Documents/com~apple~CloudDocs/Documents/规则体系",
     "~/Documents/规则体系",
     "~/Desktop/规则体系",
 ]
-ALWAYS_BUDGET = 40960
+ALWAYS_BUDGET = 10240
 
 
 class Fatal(Exception):
@@ -34,7 +36,7 @@ def load(args):
     try:
         rules, issues = load_rules(resolve_source(args.source))
     except OSError as e:
-        raise Fatal(f"读取规则源失败(iCloud 文件未下载?): {e}")
+        raise Fatal(f"读取规则源失败(无权限或 iCloud 文件未下载; 后台任务读 iCloud 需要完全磁盘访问权限): {e}")
     errors = [i for i in issues if i[0] == "error"]
     if errors:
         raise Fatal("规则源有错误 先修复:\n  " + "\n  ".join(f"{f}: {m}" for _, f, m in errors))
@@ -47,14 +49,14 @@ def plan(args, rules):
     """每个目标渲染成 [(根目录, 文件表)] 以及 Codex 区块"""
     home = os.path.expanduser(args.home)
     out, block = [], None
-    for t in args.target or ["claude", "codex"]:
+    for t in args.target or ["claude", "codex", "cursor"]:
         if t == "claude":
             out.append((os.path.join(home, ".claude"), T.render_claude(rules)))
         elif t == "codex":
-            out.append((os.path.join(home, ".codex"), T.render_codex(rules)))
+            out.append((os.path.join(home, ".codex"), {**T.render_codex(rules), **render_agents("codex", reviewers())}))
             block = (os.path.join(home, ".codex", "AGENTS.md"), T.agents_block(rules))
         elif t == "cursor":
-            out.append((os.path.join(home, ".cursor"), T.render_paste(rules)))
+            out.append((os.path.join(home, ".cursor"), {**T.render_paste(rules), **render_agents("cursor", reviewers())}))
             if args.project:
                 out.append((os.path.join(os.path.expanduser(args.project), ".cursor"), T.render_cursor(rules)))
     return out, block
@@ -91,7 +93,7 @@ def cmd_sync(args):
     if failed:
         raise Fatal("部分目标写入失败(固态未挂载或链接悬空?):\n  " + "\n  ".join(failed))
     if always_bytes(rules) > ALWAYS_BUDGET:
-        print(f"提示: 常驻规则正文已达 {always_bytes(rules)} 字节 过长会稀释遵守率", file=sys.stderr)
+        print(f"警告: 常驻规则正文 {always_bytes(rules)} 字节 超过硬上限 {ALWAYS_BUDGET} 过长会稀释遵守率 check 与 doctor 会失败", file=sys.stderr)
     if not args.dry_run:
         status.record(args.home, True)
     return 0
@@ -107,6 +109,8 @@ def cmd_check(args):
     if block:
         problems += T.agents_drift(*block)
     problems += [f"{f}: {m}" for lv, f, m in issues if lv == "warn"]
+    if always_bytes(rules) > ALWAYS_BUDGET:
+        problems.append(f"常驻规则正文 {always_bytes(rules)} 字节 超过硬上限 {ALWAYS_BUDGET} 加一条先删一条")
     for p in problems:
         print(p)
     print("通过" if not problems else f"发现 {len(problems)} 个问题")
@@ -150,6 +154,76 @@ def cmd_stats(args):
     return 0
 
 
+def cmd_violations(args):
+    rows = read_violations(args.days)
+    if not rows:
+        print("还没有违规记录")
+        return 0
+    try:
+        rules, _ = load(args)
+        auto, manual, _, _, _ = enforcers.report(rules, enforcers.load(resolve_source(args.source)))
+    except Fatal:
+        rules, auto, manual = [], {}, {}
+    by_rule, by_hook = {}, {}
+    for r in rows:
+        by_rule[r["rule"]] = by_rule.get(r["rule"], 0) + 1
+        by_hook[r["hook"]] = by_hook.get(r["hook"], 0) + 1
+    print(f"== 最近 {args.days} 天共 {len(rows)} 次拦截或违规")
+    for rule, n in sorted(by_rule.items(), key=lambda kv: -kv[1]):
+        print(f"  {n:>4}  {rule}（{'有机器执行者' if rule in auto else '靠自觉'}）")
+    print("== 按来源")
+    for hook, n in sorted(by_hook.items(), key=lambda kv: -kv[1]):
+        print(f"  {n:>4}  {hook}")
+    upgrade = [r for r in by_rule if r in manual]
+    if upgrade:
+        print("== 靠自觉却被闸门或复核抓到的规则（优先升级为机器检查）: " + "、".join(upgrade))
+    quiet = [r.id for r in rules if r.id not in by_rule and r.id in auto]
+    if quiet:
+        print("== 有机器执行者但这段时间从未触发（若长期如此，结合使用频率考虑精简）: " + "、".join(quiet))
+    return 0
+
+
+def cmd_task(args):
+    proj = task.project_root(os.path.abspath(args.project))
+    if args.action in ("new", "skip") or args.action != "status":
+        if not proj:
+            raise Fatal(f"{os.path.abspath(args.project)} 不在 Maven 或 Gradle 工程里")
+    if args.action == "new":
+        if not args.name or not args.level:
+            raise Fatal("task new 需要 --name 和 --level（小 或 标准）以及 --reason")
+        path = task.new_task(proj, args.name, args.level, args.reason)
+        print(f"已建任务 {path}\n产物模板已生成在该目录（固态，不进项目仓库）。下一步: 写 prd.md，然后 rulehub task review prd")
+        return 0
+    if args.action == "skip":
+        print(f"已记录并跳过流水线 {task.skip_task(proj, args.reason)}")
+        return 0
+    current = task.active_task(proj) if proj and task.root_available() else None
+    if args.action == "status":
+        print("\n".join(task.status_lines(current)) if current else "没有进行中的任务")
+        return 0
+    if not current:
+        raise Fatal("没有进行中的任务，先 rulehub task new")
+    if args.action in ("review", "advance") and not args.stage:
+        raise Fatal(f"task {args.action} 需要阶段名: prd、api、tests、impl、final")
+    if args.action == "review":
+        rec = task.review(current, args.stage)
+        print(f"{args.stage} 评审: {rec['verdict']}（{rec['model']}）")
+        for f in rec["findings"]:
+            print(f"- [{f.get('rule', '')}] {f['evidence']}")
+        if rec["verdict"] == "unavailable":
+            print(f"复核员没有给出有效结果: {rec.get('error') or '无输出'}\n常见原因: 在沙箱里运行时没有放行到 api.anthropic.com 的网络；或复核命令超时。可重试，或在沙箱外运行这条命令")
+        return 0 if rec["verdict"] in ("pass", "skipped") else 1
+    if args.action == "advance":
+        state = task.advance(current, args.stage)
+        print(f"已推进到 {args.stage}" + ("，任务完成" if state["done"] else f"，下一阶段 {task.next_stage(state)}"))
+        return 0
+    if not args.cmd:
+        raise Fatal(f"task {args.action} 需要 --cmd \"<测试命令>\"")
+    code, tail = task.record_run(current, args.action, args.cmd, proj)
+    print(f"已记录{'红' if args.action == 'red' else '绿'}（退出码 {code}）\n{tail[-600:]}")
+    return 0
+
+
 def cmd_history(args):
     names = history.list_snapshots(args.home)
     print("\n".join(names) if names else "还没有快照")
@@ -187,6 +261,28 @@ def cmd_launchd(args):
     return 0
 
 
+def cmd_enforcement(args):
+    src = resolve_source(args.source)
+    rules, _ = load(args)
+    auto, manual, missing, gaps, stale = enforcers.report(rules, enforcers.load(src))
+    print(f"== 机器执行 {len(auto)} 条")
+    for rid, e in auto.items():
+        print(f"  {rid}: " + "；".join(e["hooks"]) + (f"（其余靠自觉: {e['manual']}）" if e.get("manual") else ""))
+    print(f"== 靠自觉 {len(manual)} 条（已登记原因）")
+    for rid, why in manual.items():
+        print(f"  {rid}: {why}")
+    print(f"== 未登记 {len(missing)} 条" + ("（先判断能否机检 再登记到 enforcers.json）" if missing else ""))
+    for rid in missing:
+        print(f"  {rid}")
+    if gaps:
+        print(f"== 已知缺口 {len(gaps)} 条（能机检但还没做）")
+        for rid, why in gaps.items():
+            print(f"  {rid}: {why}")
+    for rid in stale:
+        print(f"[warn] enforcers.json 里的 {rid} 已没有对应规则")
+    return 1 if args.strict and (missing or stale) else 0
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="rulehub")
     p.add_argument("--source")
@@ -208,11 +304,26 @@ def main(argv=None):
     sub.add_parser("list").set_defaults(fn=cmd_list)
     sub.add_parser("stats").set_defaults(fn=cmd_stats)
     sub.add_parser("history").set_defaults(fn=cmd_history)
+    vi = sub.add_parser("violations")
+    vi.add_argument("--days", type=int, default=30)
+    vi.set_defaults(fn=cmd_violations)
     rs = sub.add_parser("restore")
     rs.add_argument("snapshot")
     rs.add_argument("--yes", action="store_true")
     rs.set_defaults(fn=cmd_restore)
     sub.add_parser("doctor").set_defaults(fn=cmd_doctor)
+    tk = sub.add_parser("task")
+    tk.add_argument("action", choices=["new", "skip", "status", "review", "advance", "red", "green"])
+    tk.add_argument("stage", nargs="?")
+    tk.add_argument("--project", default=".")
+    tk.add_argument("--name")
+    tk.add_argument("--level")
+    tk.add_argument("--reason", default="")
+    tk.add_argument("--cmd")
+    tk.set_defaults(fn=cmd_task)
+    en = sub.add_parser("enforcement")
+    en.add_argument("--strict", action="store_true")
+    en.set_defaults(fn=cmd_enforcement)
     ld = sub.add_parser("launchd")
     ld.add_argument("action", choices=["print", "install", "uninstall"])
     ld.set_defaults(fn=cmd_launchd)
@@ -229,7 +340,7 @@ def main(argv=None):
     args = p.parse_args(argv)
     try:
         return args.fn(args)
-    except (Fatal, T.GuardError, ImportFailed) as e:
+    except (Fatal, T.GuardError, ImportFailed, task.TaskError) as e:
         if args.cmd == "sync" and not args.dry_run:
             status.record(args.home, False, str(e).splitlines()[0])
         if getattr(args, "hook", False):

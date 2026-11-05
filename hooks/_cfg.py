@@ -1,12 +1,7 @@
-"""hook 开关 配置文件 ~/.config/rulehub/config.json 形如 {"hooks": {"java_guard": false}}"""
-import json
+"""钩子公共入口 把插件根目录加入路径后复用 rulehub 包里的配置与记录函数"""
 import os
+import sys
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-def enabled(name):
-    path = os.environ.get("RULEHUB_CONFIG") or os.path.expanduser("~/.config/rulehub/config.json")
-    try:
-        with open(path, encoding="utf-8") as f:
-            return json.load(f).get("hooks", {}).get(name, True) is not False
-    except (OSError, ValueError, AttributeError):
-        return True
+from rulehub.config import enabled, in_scope, log_violation, new_text, reviewers  # noqa: E402,F401

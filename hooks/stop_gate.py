@@ -5,7 +5,7 @@ import os
 import re
 import sys
 
-from _cfg import enabled
+from _cfg import enabled, in_scope, log_violation
 
 MARKERS = ("pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle")
 BUILD = re.compile(r"\b(?:mvnw?|gradlew?)\b.*\b(?:compile|build|test|package|verify|install)\b")
@@ -40,11 +40,12 @@ def main():
                 inp = block.get("input") or {}
                 if block.get("name") in ("Edit", "Write", "MultiEdit"):
                     path = str(inp.get("file_path", ""))
-                    if path.endswith(".java") and in_build_project(path):
+                    if path.endswith(".java") and in_scope(path) and in_build_project(path):
                         last_edit = idx
                 elif block.get("name") == "Bash" and BUILD.search(str(inp.get("command", ""))):
                     last_build = idx
     if last_edit > last_build:
+        log_violation("stop_gate", "java-09-checklist", "改过 Java 未编译")
         print(json.dumps({"decision": "block", "reason": "规则 java-09/java-11：改过 Maven 或 Gradle 工程里的 Java 后必须执行 mvn compile（或 gradle build）并确认 0 错误才能声称完成。请现在编译，失败就修复；本机无法编译时如实说明原因和命令"}, ensure_ascii=False))
 
 

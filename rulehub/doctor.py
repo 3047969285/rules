@@ -5,7 +5,7 @@ import shutil
 import sys
 import time
 
-from . import status
+from . import enforcers, status, task
 from . import targets as T
 from .cli import ALWAYS_BUDGET, Fatal, always_bytes, plan, resolve_source
 from .model import load_rules
@@ -32,7 +32,7 @@ def check_source(args):
     return src, rules, out
 
 
-def check_targets(args, rules):
+def check_targets(args, rules, src):
     out = []
     roots, block = plan(args, rules)
     for root, files in roots:
@@ -46,8 +46,13 @@ def check_targets(args, rules):
     if block:
         size = os.path.getsize(block[0]) if os.path.exists(block[0]) else 0
         out.append(("warn" if size > T.AGENTS_LIMIT * 0.8 else "ok", f"Codex AGENTS.md {size} 字节 上限 {T.AGENTS_LIMIT}"))
+    _, _, missing, gaps, stale = enforcers.report(rules, enforcers.load(src))
+    if missing or stale:
+        out.append(("warn", f"{len(missing)} 条规则没登记执行者 {len(stale)} 条登记已过期 运行 enforcement 查看"))
+    else:
+        out.append(("ok", "每条规则都登记了执行者或原因" + (f" 另有 {len(gaps)} 个能机检但未做的缺口" if gaps else "")))
     total = always_bytes(rules)
-    out.append(("warn" if total > ALWAYS_BUDGET else "ok", f"常驻规则正文 {total} 字节 建议不超过 {ALWAYS_BUDGET}"))
+    out.append(("fail" if total > ALWAYS_BUDGET else "ok", f"常驻规则正文 {total} 字节 硬上限 {ALWAYS_BUDGET}"))
     return out
 
 
@@ -74,8 +79,10 @@ def check_environment(args):
                 out.append(("warn", "settings.json 里还有旧的手写 hook 会和插件重复触发"))
     except (OSError, ValueError):
         pass
+    docs = task.devdocs_root()
+    out.append(("ok", f"固态文档目录可用 {docs}") if task.root_available() else ("warn", f"固态文档目录不可用 {docs} 后端开发流水线的阶段闸门会放行"))
     plist = os.path.join(home, "Library", "LaunchAgents", "com.rulehub.sync.plist")
-    out.append(("ok", "自动监听已安装") if os.path.exists(plist) else ("info", "自动监听未安装 规则源变更要等会话结束时才同步 可用 launchd install"))
+    out.append(("ok", "自动监听已安装") if os.path.exists(plist) else ("info", "自动监听未安装 规则源变更要等会话结束时才同步(规则源在 iCloud 时后台任务读不到 不建议装)"))
     for tool in ("codex", "cursor-agent"):
         if not shutil.which(tool):
             out.append(("info", f"本机没有 {tool} 命令行 只能验证生成结构 不能验证它实际读取"))
@@ -85,5 +92,5 @@ def check_environment(args):
 def run(args):
     src, rules, out = check_source(args)
     if rules:
-        out += check_targets(args, rules)
+        out += check_targets(args, rules, src)
     return out + check_environment(args)

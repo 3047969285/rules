@@ -10,13 +10,13 @@
       { "hooks": [{ "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/rule_router.py\"" }] }
     ],
     "PreToolUse": [
-      { "matcher": "Edit|Write|MultiEdit", "hooks": [{ "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/java_guard.py\"" }] }
+      { "matcher": "Edit|Write|MultiEdit", "hooks": [{ "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/java_guard.py\"" }, { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/secret_guard.py\"" }, { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/stage_gate.py\"" }] }
     ],
     "PostToolUse": [
       { "matcher": "Edit|Write|MultiEdit", "hooks": [{ "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/java_guard.py\"" }] }
     ],
     "Stop": [
-      { "hooks": [{ "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/stop_gate.py\"" }] }
+      { "hooks": [{ "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/stop_gate.py\"" }, { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/evidence_gate.py\"", "timeout": 120 }] }
     ]
   }
 }

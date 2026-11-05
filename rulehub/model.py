@@ -48,10 +48,14 @@ def parse(text):
     return meta, m.group(2).lstrip("\n")
 
 
+def _raise(err):
+    raise err
+
+
 def load_rules(src):
     """读取规则源 返回 (rules, issues) issues 为 (级别, 文件, 说明)"""
     rules, issues, seen = [], [], {}
-    for root, _, files in sorted(os.walk(src)):
+    for root, _, files in sorted(os.walk(src, onerror=_raise)):
         for fn in sorted(files):
             if not fn.endswith(".mdc"):
                 continue

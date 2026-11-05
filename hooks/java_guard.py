@@ -1,16 +1,43 @@
 #!/usr/bin/env python3
-"""Java 规则体系守卫 PreToolUse 拦测试与 yml 写入 PostToolUse 扫描违规"""
+"""Java 规则体系守卫 PreToolUse 写入前拦截违规内容与测试 yml 文件 PostToolUse 写入后做整文件扫描"""
 import json
 import os
 import re
 import sys
 
-from _cfg import enabled
+from _cfg import enabled, in_scope, log_violation, new_text
+from rulehub.task import tests_allowed
 
 PUNCT = re.compile(r"[，。、；：！？（）《》“”‘’,.;:!?()\[\]{}\"'`*\-]")
 INNER = re.compile(r"^\s{4,}(?:(?:public|private|protected|static|final|abstract)\s+)*(?:class|enum|interface|record)\s+\w+")
 METHOD = re.compile(r"^ {4}(?:public|protected|private)\s+(?:static\s+)?(?:final\s+)?[\w<>\[\],?\s]+\s+\w+\s*\([^;]*$|^ {4}(?:public|protected|private)\s+\w+\s*\(")
 IFACE_METHOD = re.compile(r"^ {4}(?=[\w<])(?!return |throw |new )[\w<>\[\],?\s]+\s+\w+\s*\([^)]*\)\s*;$")
+
+JAVA_RULES = [
+    (re.compile(r"^\s{8,}.*Pattern\.compile\("), "方法体内禁止 Pattern.compile，改类级 static final"),
+    (re.compile(r"@(?:Select|Insert|Update|Delete)\b"), "Mapper 禁止注解 SQL，写进 XML"),
+    (re.compile(r"throw new (?:RuntimeException|Exception|Throwable)\("), "禁止直接抛 RuntimeException/Exception，用业务异常"),
+    (re.compile(r"new Thread\(|Executors\."), "禁止 new Thread / Executors，用 ThreadPoolExecutor"),
+    (re.compile(r"log\.\w+\(\s*\"[^\"]*\"\s*\+"), "日志禁止字符串拼接，用 {} 占位符"),
+    (re.compile(r"catch\s*\([^)]*\)\s*\{\s*\}"), "禁止空 catch"),
+]
+XML_RULES = [
+    (re.compile(r"select\s+(?:\w+\.)?\*", re.I), "禁止 SELECT *，须显式列名"),
+    (re.compile(r"\$\{"), "禁止 ${} 拼接，改用 #{}"),
+    (re.compile(r"where\s+1\s*=\s*1", re.I), "禁止 WHERE 1=1，用 <where>"),
+]
+
+
+RULE_OF = [("Pattern.compile", "java-05-code-style"), ("Thread", "java-05-code-style"), ("空 catch", "java-05-code-style"),
+           ("注解 SQL", "java-03-mapper-xml"), ("SELECT", "java-03-mapper-xml"), ("${}", "java-03-mapper-xml"),
+           ("WHERE 1=1", "java-03-mapper-xml"), ("RuntimeException", "java-06-error-log-security"),
+           ("日志禁止", "java-06-error-log-security"), ("内部类", "java-01-arch"), ("JavaDoc", "java-07-javadoc")]
+
+
+def log_issues(hook, issues):
+    for msg in issues[:10]:
+        text = msg.split(": ", 1)[-1]
+        log_violation(hook, next((r for k, r in RULE_OF if k in text), "java-05-code-style"), text)
 
 
 def project_root(path):
@@ -22,35 +49,33 @@ def project_root(path):
     return None
 
 
-def pre(path):
-    norm = path.replace("\\", "/")
-    base = os.path.basename(norm)
-    reasons = []
-    if "/src/test/" in norm or re.search(r"(Test|Tests|IT)\.java$", base):
-        reasons.append("测试文件：规则 java-11 默认禁止，除非用户本轮明确要求写测试")
-    if re.search(r"\.ya?ml$", base) and not os.path.exists(path) and project_root(path):
-        reasons.append("新建 yml：规则 java-10 默认禁止新增 yml 文件")
-    if reasons:
-        print(json.dumps({"hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "ask",
-            "permissionDecisionReason": "；".join(reasons)}}, ensure_ascii=False))
+def is_mapper_xml(path, text):
+    return path.endswith(".xml") and ("mapper" in path.lower() or "<mapper" in text)
 
 
-def scan_xml(lines):
-    out = []
+def line_issues(lines, rules, skip_comments):
+    out, in_doc = [], False
     for i, line in enumerate(lines, 1):
-        if re.search(r"select\s+(?:\w+\.)?\*", line, re.I):
-            out.append(f"{i}: 禁止 SELECT *，须显式列名")
-        if "${" in line:
-            out.append(f"{i}: 禁止 ${{}} 拼接，改用 #{{}}")
-        if re.search(r"where\s+1\s*=\s*1", line, re.I):
-            out.append(f"{i}: 禁止 WHERE 1=1，用 <where>")
+        s = line.strip()
+        if skip_comments:
+            if s.startswith("/*"):
+                in_doc = not s.endswith("*/")
+                continue
+            if in_doc:
+                in_doc = "*/" not in s
+                continue
+            if s.startswith("//"):
+                continue
+        out += [f"{i}: {msg}" for rx, msg in rules if rx.search(line)]
     return out
 
 
+def scan_xml(lines):
+    return line_issues(lines, XML_RULES, False)
+
+
 def scan_java(lines):
-    out = []
+    out = line_issues(lines, JAVA_RULES, True)
     in_doc = False
     for i, line in enumerate(lines, 1):
         s = line.strip()
@@ -64,18 +89,6 @@ def scan_java(lines):
             continue
         if INNER.match(line):
             out.append(f"{i}: 禁止内部类/枚举/接口/record，须独立顶层文件")
-        if re.search(r"^\s{8,}.*Pattern\.compile\(", line):
-            out.append(f"{i}: 方法体内禁止 Pattern.compile，改类级 static final")
-        if re.search(r"@(?:Select|Insert|Update|Delete)\b", line):
-            out.append(f"{i}: Mapper 禁止注解 SQL，写进 XML")
-        if re.search(r"throw new (?:RuntimeException|Exception|Throwable)\(", line):
-            out.append(f"{i}: 禁止直接抛 RuntimeException/Exception，用业务异常")
-        if re.search(r"new Thread\(|Executors\.", line):
-            out.append(f"{i}: 禁止 new Thread / Executors，用 ThreadPoolExecutor")
-        if re.search(r"log\.\w+\(\s*\"[^\"]*\"\s*\+", line):
-            out.append(f"{i}: 日志禁止字符串拼接，用 {{}} 占位符")
-        if re.search(r"catch\s*\([^)]*\)\s*\{\s*\}", line):
-            out.append(f"{i}: 禁止空 catch")
         if METHOD.match(line) or IFACE_METHOD.match(line):
             j = i - 2
             while j >= 0 and lines[j].strip().startswith("@"):
@@ -90,7 +103,36 @@ def scan_java(lines):
                               if l.strip().lstrip("*").strip() and not l.strip().lstrip("*").strip().startswith("@")), "")
                 if k >= 0 and PUNCT.search(first):
                     out.append(f"{k + 1}: JavaDoc 首行含标点或符号，须纯中文无标点")
-    return out
+    return sorted(out, key=lambda x: int(x.split(":")[0]))
+
+
+def decide(decision, reason):
+    print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": decision,
+                                              "permissionDecisionReason": reason}}, ensure_ascii=False))
+
+
+def pre(path, tool_input):
+    norm = path.replace("\\", "/")
+    base = os.path.basename(norm)
+    text = new_text(tool_input)
+    violations = []
+    if path.endswith(".java"):
+        violations = line_issues(text.splitlines(), JAVA_RULES, True)
+    elif is_mapper_xml(path, text):
+        violations = scan_xml(text.splitlines())
+    if violations:
+        log_issues("java_guard", violations)
+        decide("deny", "写入前检查未通过（行号相对本次写入的内容）:\n" + "\n".join(violations[:10]) + "\n请按规则改正后重新写入")
+        return
+    reasons = []
+    if ("/src/test/" in norm or re.search(r"(Test|Tests|IT)\.java$", base)) and not tests_allowed(path):
+        reasons.append("测试文件：规则 java-11 默认禁止，除非用户本轮明确要求写测试")
+        log_violation("java_guard", "java-11-artifact-boundary", "写测试文件前询问")
+    if re.search(r"\.ya?ml$", base) and not os.path.exists(path) and project_root(path):
+        reasons.append("新建 yml：规则 java-10 默认禁止新增 yml 文件")
+        log_violation("java_guard", "java-10-config-boundary", "新建 yml 前询问")
+    if reasons:
+        decide("ask", "；".join(reasons))
 
 
 def post(path):
@@ -104,6 +146,7 @@ def post(path):
     else:
         issues = scan_xml(lines) if "<mapper" in text else []
     if issues:
+        log_issues("java_guard_post", issues)
         msg = f"Java 规则体系扫描 {os.path.basename(path)} 发现疑似违规（启发式 请核对后修复）:\n" + "\n".join(issues[:20])
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": msg}}, ensure_ascii=False))
 
@@ -112,11 +155,12 @@ def main():
     if not enabled("java_guard"):
         return
     data = json.load(sys.stdin)
-    path = (data.get("tool_input") or {}).get("file_path", "")
-    if not path:
+    tool_input = data.get("tool_input") or {}
+    path = tool_input.get("file_path", "")
+    if not path or not in_scope(path):
         return
     if data.get("hook_event_name") == "PreToolUse":
-        pre(path)
+        pre(path, tool_input)
     elif path.endswith((".java", ".xml")):
         post(path)
 
