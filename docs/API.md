@@ -51,8 +51,8 @@
 ### `rulehub violations [--days N]`
 汇总违规与拦截记录（`~/.local/share/rulehub/violations.jsonl`，默认最近 30 天）：按规则、按来源统计，并指出两类候选——「靠自觉却被闸门或复核抓到」的规则应升级为机器检查，「有机器执行者却长期从未触发」的规则可考虑精简。记录里不含凭证和文件内容，只有拦截类型的简短说明。
 
-### `rulehub export OUT`
-把规则源导出成可公开的副本：只导出 `.mdc`、`.json`、`.md`；`PlagiarismChecking-server`、`黄岛`、`huangdao` 替换成通用名；用与密钥守卫相同的规则扫描，任何文件扫到凭证就拒绝，只报文件、行号和类型，不输出任何值。先全部通过检查再写入，失败不动已有目录。OUT 由本工具独占，目录非空且没有 `.exported-by-rulehub` 标记时拒绝覆盖。本机规则源不会被修改。
+### `rulehub export OUT [--extra FILE ...]`
+把规则源导出成可公开的副本：只导出 `.mdc`、`.json`、`.md`；`PlagiarismChecking-server`、`黄岛`、`huangdao` 替换成通用名；用与密钥守卫相同的规则扫描，任何文件扫到凭证就拒绝，只报文件、行号和类型，不输出任何值。先全部通过检查再写入，失败不动已有目录。OUT 由本工具独占，目录非空且没有 `.exported-by-rulehub` 标记时拒绝覆盖。`--extra` 可重复，带上规则源之外的文件（`.mdc`、`.json`、`.md`、`.txt`），放在 `OUT/extra/` 下，同样通用化和扫描，重名或不支持的类型报错。本机规则源和附加文件原文都不会被修改。
 
 ### `rulehub experiment start|stop|verdict|report`：规则试运行
 - `start RULE`：规则开始试运行，写入 `~/.config/rulehub/config.json` 的 `experimental`（保留其他配置）。试运行的规则所有钩子只记日志（带 `trial` 标记），不拦截、不提醒；同一文件里其他规则不受影响。规则 id 不存在或已在试运行时报错。

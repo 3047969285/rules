@@ -9,6 +9,7 @@ from _secrets import scan  # noqa: E402
 
 MARKER = ".exported-by-rulehub"
 EXTENSIONS = (".mdc", ".json", ".md")
+EXTRA_EXTENSIONS = EXTENSIONS + (".txt",)
 RENAMES = (("PlagiarismChecking-server", "example-project"), ("黄岛", "项目"), ("huangdao", "example"))
 
 
@@ -33,6 +34,24 @@ def collect(src):
     return out
 
 
+def collect_extras(paths):
+    """规则源之外的文件放到 extra/ 下 同样通用化和扫描"""
+    out = {}
+    for path in paths:
+        name = os.path.basename(path)
+        key = os.path.join("extra", name)
+        if not name.endswith(EXTRA_EXTENSIONS):
+            raise ExportError(f"只支持 {'、'.join(EXTRA_EXTENSIONS)} 文件: {name}")
+        if key in out:
+            raise ExportError(f"附加文件重名: {name}")
+        try:
+            with open(os.path.expanduser(path), encoding="utf-8", newline="") as f:
+                out[key] = generalize(f.read())
+        except OSError as e:
+            raise ExportError(f"读取附加文件失败: {path}: {e}")
+    return out
+
+
 def check_secrets(files):
     """凭证只报文件、行号和类型 不输出任何值或前缀"""
     problems = []
@@ -48,9 +67,10 @@ def prepare_out(out):
         raise ExportError(f"{out} 不是本工具导出的目录，拒绝覆盖")
 
 
-def export(src, out):
+def export(src, out, extras=()):
     """返回导出的文件数 先全部通过检查再写入 失败不动已有目录"""
     files = collect(src)
+    files.update(collect_extras(extras))
     if not files:
         raise ExportError("规则源里没有可导出的文件")
     check_secrets(files)

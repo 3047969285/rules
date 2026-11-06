@@ -68,11 +68,42 @@ class ExportTests(Base):
         self.assertIn("拒绝覆盖", err)
         self.assertEqual(read(os.path.join(foreign, "keep.txt")), "x")
 
+    def test_extra_files_go_under_extra_with_the_same_checks(self):
+        extra = os.path.join(self.tmp.name, "personal-rules.md")
+        write(extra, "处理 PlagiarismChecking-server 或黄岛文档任务\n")
+        code, out, _ = run("--source", self.src, "export", self.out, "--extra", extra)
+        self.assertEqual(code, 0)
+        self.assertIn("已导出 4 个文件", out)
+        self.assertEqual(read(os.path.join(self.out, "extra", "personal-rules.md")), "处理 example-project 或项目文档任务\n")
+        self.assertEqual(read(extra), "处理 PlagiarismChecking-server 或黄岛文档任务\n")
+
+    def test_extra_with_credential_missing_unsupported_or_duplicate_name_is_rejected(self):
+        bad = os.path.join(self.tmp.name, "bad.md")
+        write(bad, f"key = {AWS}\n")
+        code, _, err = run("--source", self.src, "export", self.out, "--extra", bad)
+        self.assertEqual(code, 2)
+        self.assertIn("extra/bad.md 1:", err)
+        self.assertNotIn(AWS, err)
+        self.assertFalse(os.path.exists(self.out))
+        self.assertIn("读取附加文件失败", run("--source", self.src, "export", self.out, "--extra", "/不存在.md")[2])
+        script = os.path.join(self.tmp.name, "a.py")
+        write(script, "x")
+        self.assertIn("只支持", run("--source", self.src, "export", self.out, "--extra", script)[2])
+        txt = os.path.join(self.tmp.name, "paste.txt")
+        write(txt, "黄岛\n")
+        self.assertEqual(run("--source", self.src, "export", self.out, "--extra", txt)[0], 0)
+        self.assertEqual(read(os.path.join(self.out, "extra", "paste.txt")), "项目\n")
+        other = os.path.join(self.tmp.name, "sub", "bad.md")
+        write(other, "ok\n")
+        write(bad, "ok\n")
+        self.assertIn("重名", run("--source", self.src, "export", self.out, "--extra", bad, "--extra", other)[2])
+
     def test_only_rule_files_are_exported_and_empty_source_is_rejected(self):
         write(os.path.join(self.src, "x", "note.txt"), "不导出")
+        write(os.path.join(self.src, "x", "note.mdc"), "导出\n")
         write(os.path.join(self.src, "x", ".DS_Store"), "x")
         run("--source", self.src, "export", self.out)
-        self.assertFalse(os.path.exists(os.path.join(self.out, "x")))
+        self.assertEqual(sorted(os.listdir(os.path.join(self.out, "x"))), ["note.mdc"])
         with tempfile.TemporaryDirectory() as empty:
             self.assertIn("没有可导出", run("--source", empty, "export", os.path.join(empty, "o"))[2])
 

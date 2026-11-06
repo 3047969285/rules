@@ -315,7 +315,7 @@ def cmd_experiment(args):
 
 
 def cmd_export(args):
-    count = export.export(resolve_source(args.source), os.path.expanduser(args.out))
+    count = export.export(resolve_source(args.source), os.path.expanduser(args.out), args.extra)
     print(f"已导出 {count} 个文件到 {args.out}（项目名已通用化，已扫描凭证）")
     return 0
 
@@ -370,6 +370,7 @@ def main(argv=None):
     ex.set_defaults(fn=cmd_experiment)
     xp = sub.add_parser("export")
     xp.add_argument("out")
+    xp.add_argument("--extra", action="append", default=[], help="规则源之外要一起导出的文件 可重复")
     xp.set_defaults(fn=cmd_export)
     ld = sub.add_parser("launchd")
     ld.add_argument("action", choices=["print", "install", "uninstall"])
