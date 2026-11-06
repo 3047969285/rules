@@ -1,0 +1,47 @@
+---
+description: 【按需Read全文·防截断】Java 分层架构、产出物最小化、复用判断原则（强制）
+globs: "**/*.{java,xml}"
+alwaysApply: false
+---
+
+# 分层与产出物规范
+
+## 调用链（禁止跨层）
+Controller → Service → ServiceImpl → Mapper → XML
+
+| 层 | 职责 | 禁止 |
+|---|---|---|
+| Controller | 接参、校验、调 Service、返回统一响应 | 写业务、注入 Mapper |
+| Service | 定义业务契约 | 写实现 |
+| ServiceImpl | 业务编排、事务、转换 | 处理 HTTP、绕 Mapper |
+| Mapper | 数据访问 | 写业务判断 |
+| model | 纯数据结构 | 写业务方法 |
+
+## 产出物最小化
+- 只新增满足需求的最少 Java 类与 XML；禁止无意义包装类与中间层
+- 禁止写入无用文件、临时脚本、过程说明、`.bak/.tmp`
+- 禁止私自建 Manager 等平行中间层
+- 配置最小化见 **`java-10-config-boundary`**：默认不写 yml；白名单项仅改既有 application.yml
+- 产出物边界见 **`java-11-artifact-boundary`**：**禁止**向项目写入测试类与过程文件；验证仅 `mvn compile`
+- **禁止内部类、内部枚举、内部接口、局部类、方法内 record（强制）**
+  - 不得写在 Controller / Service / ServiceImpl / Mapper / 工具类等任何业务类内部
+  - **不得为消除重复代码而引入内部接口或内部适配器类**；POI 等第三方类型无公共父接口时，允许保留签名不同的重载方法
+  - 数据载体放 `model`/`model.dto`，列索引与业务码放 `model.enums`（或项目已有 enums 包），须为独立顶层类文件
+
+## 复用判断（开发前必须全项目检索）
+
+**用枚举/常量优先复用**：`common/util/tool` 中无业务绑定的工具方法、基础设施
+
+**禁止复用**：绑定具体业务域的流程方法、含硬编码规则/区域/状态流转的实现
+
+**必须复用的能力**：
+
+| 能力 | 位置 |
+|---|---|
+| DTO/实体互转 | BeanConvert 或等价工具 |
+| 业务断言与失败 | BizAssert/BizException/BusinessException |
+| 统一响应 | ApiResult/BaseResponse/ResultUtils |
+| 参数校验 | Jakarta Validation + ValidGroups |
+| 密码哈希 | HashUtil 或等价工具 |
+
+**全项目无通用实现时，先向用户确认是否新建，未经确认不得新建公共类**

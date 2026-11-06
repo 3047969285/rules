@@ -1,0 +1,127 @@
+{
+  "version": 2,
+  "mergedFrom": "AI规则体系-当前版.rar",
+  "userHome": "%USERPROFILE%",
+  "alwaysApply": [
+    "00-core-digest.mdc",
+    "craft-excellence.mdc",
+    "code-first-facts.mdc",
+    "reply-style-core.mdc",
+    "security-confidentiality.mdc",
+    "competitive-collab.mdc",
+    "prompt-optimize.mdc",
+    "cost-effective-models.mdc"
+  ],
+  "competitiveCollab": [
+    "competitive-collab.mdc"
+  ],
+  "promptOptimize": [
+    "prompt-optimize.mdc"
+  ],
+  "costEffectiveModels": [
+    "cost-effective-models.mdc"
+  ],
+  "java": {
+    "required": [
+      "java-01-arch.mdc",
+      "java-05-code-style.mdc",
+      "java-07-javadoc.mdc",
+      "java-08-workflow.mdc",
+      "java-09-checklist.mdc",
+      "java-10-config-boundary.mdc",
+      "java-11-artifact-boundary.mdc",
+      "reasoning-integrity.mdc",
+      "java-12-pipeline.mdc"
+    ],
+    "conditional": [
+      {
+        "pattern": "controller|service",
+        "contentPattern": "@(?:RestController|Controller|Service)|\\b(?:class|interface)\\s+\\w*(?:Controller|Service)\\b",
+        "files": [
+          "java-02-controller-service.mdc"
+        ]
+      },
+      {
+        "pattern": "mapper",
+        "contentPattern": "<mapper\\b|namespace\\s*=|\\b(?:select|insert|update|delete)\\b",
+        "files": [
+          "java-03-mapper-xml.mdc"
+        ]
+      },
+      {
+        "pattern": "enum|constant",
+        "contentPattern": "\\benum\\s+\\w+|static\\s+final\\s+(?:int|long|String|boolean)",
+        "files": [
+          "java-04-naming-constants.mdc"
+        ]
+      },
+      {
+        "pattern": "exception|error|log|security|auth|password|token|permission",
+        "contentPattern": "@(?:PreAuthorize|Secured)|\\b(?:password|token|secret|credential|permission|role)\\b|\\blog\\.(?:debug|info|warn|error)\\b|\\b(?:Exception|Throwable)\\b",
+        "files": [
+          "java-06-error-log-security.mdc"
+        ]
+      }
+    ]
+  },
+  "mapperXml": {
+    "required": [
+      "java-03-mapper-xml.mdc"
+    ]
+  },
+  "technical": [
+    "solution-explanation-detail.mdc",
+    "00-architect-stance.mdc",
+    "reasoning-integrity.mdc"
+  ],
+  "directExec": [
+    "agent-exec-minimal.mdc"
+  ],
+  "documentRules": [
+    "reasoning-integrity.mdc"
+  ],
+  "reference": [
+    "00-rule-index.mdc",
+    "USER-RULES-NO-FIGHT-PASTE.txt"
+  ],
+  "projectRules": [
+    {
+      "root": "**/example-project",
+      "path": ".cursor/rules/template-source-result-accuracy.mdc",
+      "holdCopy": "%USERPROFILE%/.cursor/project-rules-hold/example-project/template-source-result-accuracy.mdc",
+      "when": "模板、源文件、结果样例或项目文档任务",
+      "requiredForExtensions": [
+        ".docx",
+        ".xls",
+        ".xlsx"
+      ],
+      "note": "若本机无该项目根目录，使用 holdCopy；打开项目后请拷入项目 .cursor/rules/",
+      "rootMatch": "portable directory-name suffix; verify repository identity if multiple matches exist"
+    }
+  ],
+  "intimacy": [
+    "reply-style-girlfriend-pro.mdc",
+    "01-allow-explicit-intimacy.mdc"
+  ],
+  "deliveryQuality": [
+    "quality-gate-advisor.mdc",
+    "experiment.mdc"
+  ],
+  "workflowReference": [
+    "00-force-all-rules.mdc"
+  ],
+  "communication": [
+    "chinese-only.mdc"
+  ],
+  "personalTone": [
+    "reply-style-girlfriend-pro.mdc"
+  ],
+  "sync": {
+    "cloudSource": "https://github.com/3047969285/codex-personal-rules",
+    "localClone": "%USERPROFILE%/codex-personal-rules",
+    "intervalMinutes": 5,
+    "stableSeconds": 60,
+    "installer": "Sync-Rules.ps1 -InstallAutoSync",
+    "backgroundTask": "CodexPersonalRulesAutoSync"
+  }
+}

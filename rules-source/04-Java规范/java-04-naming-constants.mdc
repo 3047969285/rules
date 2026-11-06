@@ -1,0 +1,52 @@
+---
+description: 【按需Read全文·防截断】Java 命名规范与常量枚举选择原则（强制）
+globs: "**/*.java"
+alwaysApply: false
+---
+
+# 命名规范
+- 类名 UpperCamelCase；DO/DTO/VO/AO 等后缀保持大写（如 UserDTO）
+- 方法/参数/变量 lowerCamelCase；常量全大写下划线
+- 包名全小写、单数；POJO 布尔属性不加 is 前缀
+- 禁止拼音英文混合、禁止中文命名（国际通用名除外）、禁止不规范缩写
+- 抽象类 Abstract/Base 开头；异常类 Exception 结尾；测试类 Test 结尾
+- 数组写 `String[] args`，禁止 `String args[]`
+- 业务枚举：`XxxStatusEnum`/`XxxTypeEnum`，放项目 enums 包
+
+# 常量与枚举：选择原则（强制）
+
+## 用枚举（离散类型）
+值具有业务命名语义、属于同一有限集合时：
+- 业务状态码（待审/通过/拒绝等）
+- 业务类型码（普通/高危/VIP 等）
+- 结构化列索引（如某 Excel 各列，每列有明确名称与含义）
+- 流程节点、操作类型等有限命名集合
+
+**放置位置**：独立 `.java` 文件，放 `model.enums`（或项目已有如 `model.enums.example`）；**禁止**写在 ServiceImpl/Controller 等业务类内部
+
+**枚举格式**：`@Getter`，字段 `code`、`description`，手写构造器，类级 JavaDoc：
+```java
+/**
+ * 供电所线路明细列索引
+ */
+public enum HuangDaoRiskPlanLedgerColumnEnum {
+    STATION(1, "变电站名"), LINE_NAME(3, "线路名");
+    @Getter private final int code;
+    @Getter private final String description;
+    HuangDaoRiskPlanLedgerColumnEnum(int code, String description) {
+        this.code = code; this.description = description;
+    }
+}
+```
+
+## 用常量（独立标量）
+孤立的阈值/偏移量/边界值，与其他值不构成有语义的集合：
+- 最大行数、最短字符数、搜索上限等阈值
+- 数组容量、序号偏移、ASCII 边界等技术值
+- 调试日志截断长度等内部实现限制
+
+**常量格式**：`private static final int MAX_FAULT_COUNT = 3;`
+
+## 其他规则
+- 禁止魔法值，业务码必须用枚举或 XxxConstants
+- long/Long 赋值用大写 `L`，禁止小写 `l`

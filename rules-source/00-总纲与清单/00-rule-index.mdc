@@ -1,0 +1,56 @@
+---
+description: 按需规则索引 说明常驻内容与任务分类路由
+alwaysApply: false
+---
+
+# 规则索引
+
+## 云端来源与同步
+
+- 唯一源：`%USERPROFILE%\codex-personal-rules` 私有仓库；`rules/` 保存规则原文。
+- `.cursor/rules`、`.agents/skills`、`.codex/AGENTS.md` 和桌面目录是自动安装的本机副本。
+- 后台任务每 5 分钟拉取并安装；云端 clone 中稳定 60 秒的改动自动提交推送。
+- 多台电脑同时修改同一文件发生冲突时停止自动合并，保留两边提交并记入本机同步日志。
+- Mac 上由 rule-hub 工具从本目录生成 Claude Code、Codex、Cursor 各自格式并校验，工具在 `~/项目/rule-hub`。
+
+## 常驻最小层
+
+- 00-core-digest.mdc：优先级、任务分类、安全边界和完成判定
+- craft-excellence.mdc：质量优先。不得为交差降标；代码符合规范、简洁、可复用、健壮、安全；仓库已有测试必须跑全套
+- code-first-facts.mdc：先读相关代码和本次命令输出，再下结论。禁止用推测代替没打开的实现
+- reply-style-core.mdc：简体中文和基础回复风格
+- security-confidentiality.mdc：最小读取、脱敏和外传边界
+- competitive-collab.mdc：复杂任务由当前代理自己审查、自己当裁判，拆成细则后再执行。禁止三个模型审批。拿不定先问用户。简单任务不启动
+- prompt-optimize.mdc：每句提问先扩写为角色、任务、规则、约束、示例、输出、输入，再执行。简单问题直接改，不召开裁决
+- cost-effective-models.mdc：能自选模型时优先性价比档。每天约 7 小时、连续约半个月、三个项目同时跑时，固定 Composer 2.5，不开 Fast
+
+## 仅在命中任务时加载
+
+- 00-force-all-rules.mdc：规则体系维护或需要完整流程审计时参考；不作为每轮常驻入口
+- quality-gate-advisor.mdc：实际写入或交付任务的针对性复核
+- agent-exec-minimal.mdc：用户明确要求直接实现、改工程、写脚本或跑通交付时加载
+- reply-style-girlfriend-pro.mdc：仅用户明确要求个性化亲密风格时加载；遵守系统与安全边界
+- chinese-only.mdc：兼容参考；语言要求由 reply-style-core 提供
+- 00-rule-index.mdc：路由不清或维护规则体系时读取
+
+## 技术方案与证据
+
+- 00-architect-stance.mdc、solution-explanation-detail.mdc：非平凡方案、技术比较、真实调用链或风险审查
+- reasoning-integrity.mdc：文档、来源或证据审计；不随一般 Java 修改自动加载
+
+## Java / XML
+
+- 实际改动 Java/XML 时使用 user-rules-java 技能和 rule-manifest.json 中的通用、条件分册
+- Controller/Service、Mapper/XML、枚举常量、异常日志安全按代码内容追加对应分册
+
+## 文档与项目模板
+
+- 实际处理 DOCX/XLS/XLSX、模板、源文件或结果样例时使用 user-rules-documents 技能
+- 先读取 rule-manifest.json 登记的项目模板规则；模板或必要输入无法完整读取时暂停
+- 文档证据审计加载 reasoning-integrity.mdc
+
+## 路由约束
+
+- 清单登记加载关系，不会自行运行 Hook；Hook 只有在实际注册并读取清单时才能执行校验
+- 规则正文按任务加载，不把全部分册复制到常驻入口
+- Cursor 专属 enforce-user-rules 不是 Codex 自动入口；Codex 以 AGENTS.md 和 Skills 路由

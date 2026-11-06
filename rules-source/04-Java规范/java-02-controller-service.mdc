@@ -1,0 +1,27 @@
+---
+description: 【按需Read全文·防截断】Java Controller 和 Service/ServiceImpl 层规范（强制）
+globs: "**/*.java"
+alwaysApply: false
+---
+
+# Controller 规范
+- `@RestController` + `@RequestMapping` + `@Validated`
+- 返回项目统一包装（`ApiResult<T>` 等），成功用 `ok`，禁止自定义 Map 拼 JSON
+- 增删改入参：`@Validated(ValidGroups.Create.class)` / `Update.class` 分组
+- 业务失败由 Service 抛业务异常，**禁止** Controller 内 try-catch 拼错误响应
+- 禁止注入 Mapper；若项目有 BaseController/权限注解/操作日志注解，沿用现状
+- 方法命名：查询 get/list/find，新增 add/save，修改 update，删除 delete/remove
+- 文件上传：`consumes = MULTIPART_FORM_DATA`
+
+# Service / ServiceImpl 规范
+- 每个模块必须有 Service 接口 + XxxServiceImpl，Impl 加 `@Service`
+- 写操作加 `@Transactional`；只读查询可加 `readOnly = true`
+- 不在事务中做远程调用或耗时 IO
+- 业务可预期失败**抛业务异常**，禁止 if 返回错误码
+- 写操作前做唯一性、状态、权限等校验
+- Entity / Dto / Vo 不混用，转换走项目工具
+- 禁止在 Service 中直接拼 SQL
+
+# 接口与 REST
+- REST：GET 查询、POST 新增、PUT 更新、DELETE 删除；路径小写
+- 业务失败抛异常，由 GlobalExceptionHandler 转换；禁止新建第二套 RestControllerAdvice

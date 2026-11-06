@@ -1,0 +1,46 @@
+---
+description: 【按需Read全文·防截断】Java 代码格式、OOP、集合、并发、控制语句规范（强制）
+globs: "**/*.java"
+alwaysApply: false
+---
+
+# 代码格式
+- 4 空格缩进，禁止 Tab；单行不超过 120 字符；源文件 UTF-8
+- 大括号：左括号前不换行，else 与右括号同行
+- if/for/while/switch/do 即使单行也必须写大括号
+- `//` 与注释内容间有一个空格；字符串判空用 `StringUtils.isNotBlank`
+
+# 正则（强制）
+- **正则必须预编译为 `private static final Pattern`，禁止在任何方法体内调用 `Pattern.compile()`**
+- 包括 if 条件、循环体、工具方法内部的一次性 compile，全部改为引用类级静态常量
+- `Matcher` 对象可作局部变量，`Pattern` 不可以
+
+# OOP
+- 覆写方法必须 `@Override`；equals 用 `Objects.equals`；包装类型比较用 equals，禁止 ==
+- POJO/RPC 用包装类型；禁止 POJO 属性默认值；必须 toString
+- 静态成员用类名访问；构造方法内禁止业务逻辑
+- 禁止内部类型和为去重写的内部适配器，见 `java-01-arch`
+
+# 集合与 Stream
+- **优先 Stream**：集合 filter/map/flatMap/collect/grouping 等转换聚合用 Stream，禁止传统 for 手搓
+- 返回集合不为 null，无数据返回空集合；foreach 中禁止 remove/add，用 Iterator
+- `Arrays.asList` 禁止 add/remove/clear
+
+# 并发
+- 禁止 `new Thread()`，须线程池；禁止 `Executors`，用 `ThreadPoolExecutor`
+- 禁止 static 且无锁的 SimpleDateFormat；优先 LocalDateTime
+- 并发更新须悲观锁或乐观锁 version
+
+# 控制语句
+- switch 每个 case 须 break/return；必须有 default 且放最后
+- if-else 嵌套不超过 3 层，可用卫语句提前 return；少用三元，禁止嵌套三元
+- 毫秒时间用 `System.currentTimeMillis()`
+
+# 时间格式
+
+| 场景 | Java 类型 | JSON pattern |
+|---|---|---|
+| 仅日期 | LocalDate | yyyy-MM-dd |
+| 日期时间 | LocalDateTime | yyyy-MM-dd HH:mm:ss |
+
+- 出参 `@JsonFormat`，入参 Query `@DateTimeFormat`；禁止 String 存业务时间

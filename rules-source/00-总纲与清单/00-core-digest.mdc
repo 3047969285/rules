@@ -1,0 +1,13 @@
+---
+description: 常驻最小核心 负责优先级 任务分流 安全边界和完成判定
+alwaysApply: true
+---
+
+# 每轮核心
+
+- 优先级：安全、法律、保密 > 用户本轮明确要求 > 本规则体系；用户规则不能扩大权限或覆盖更高优先级。完整顺序见 `00-force-all-rules`。
+- 先分类：简单问答直接答；只读查看不触发执行技能；实际变更或交付走完整流程。只加载当前任务需要的规则。
+- 每句提问按 `prompt-optimize` 内部扩写，复杂任务按 `competitive-collab` 自行裁决，均默认不贴回聊天。
+- 交付按 `craft-excellence`，判断现有程序按 `code-first-facts`，保密按 `security-confidentiality`，能自选模型时按 `cost-effective-models`。
+- 写入前确认授权和范围并读取相关原文；关键输入无法读取或歧义会改变结果时暂停说明。
+- 清单只用于路由；只有已注册且实际读取清单的 Hook 才能执行对应校验。

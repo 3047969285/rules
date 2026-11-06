@@ -1,0 +1,62 @@
+---
+description: 按需 Java 配置边界 默认不写 yml 仅白名单项可外置
+globs: "**/*.{java,xml,yml,yaml}"
+alwaysApply: false
+---
+
+# 配置边界（默认禁止动 yml）
+
+> 默认不写配置，白名单例外。
+
+## 总原则
+
+1. **默认**：业务实现只用 Java + 既有 XML；**不新增** `.yml`/`.yaml`；**不修改** `application.yml` 增段；**不加** `spring.config.import`；**不新建** `@ConfigurationProperties` / `@Value` 读取新键。
+2. **例外**：仅当数据属于下方**白名单**，且写入**项目已有** `application.yml` 或已有 `application-{profile}.yml` 的对应段时允许；**仍禁止**为此新建独立 yml 文件。
+3. **用户明确要求**「用配置/yml 实现」时，方案中须单独说明理由与改动文件，用户确认后才可破例。
+
+## 白名单（允许写入既有 application.yml）
+
+| 类别 | 示例 |
+|---|---|
+| 账号与密钥 | 数据库账号密码、API Key、Token |
+| 连接与地址 | DB/Redis/MQ URL、第三方接口、文件存储根路径 |
+| 环境与网络 | 端口、域名、代理、超时、连接池 |
+| 运营可调阈值 | 功能开关、重试次数、限流、cron、导出上限（**非业务规则本体**） |
+
+## 黑名单（禁止外置到 yml，必须写 Java）
+
+| 类别 | 正确落点 | 反例（禁止） |
+|---|---|---|
+| 业务规则与流程 | Service / RuleHelper | 节假日判断写 yml |
+| 领域状态/类型/模板 | `model.enums` | 模板类型写配置 |
+| 列索引/表结构语义 | 枚举或常量类 | Excel 列映射写 yml |
+| 国务院节假日等权威日历 | `*Registry` / 枚举按年维护 | `*-holidays.yml` |
+| 一次性功能数据 | DTO + 硬编码 Registry | 为单功能新建 Properties 类 |
+
+**判断口诀**：改一条数据是否等于**改业务定义** → Java；是否只为**换环境/换密钥/运营调参** → 既有 yml 白名单段。
+
+## 编码前闸门（动配置前必做）
+
+方案「改动范围」须显式写一行：
+
+`配置改动：无` **或** `配置改动：仅改 application.yml 的 [段名]，原因：[白名单类别]`
+
+出现以下任一即**默认违规**，除非用户已明确要求：
+
+- 新建 `*.yml` / `*.yaml`
+- 修改 `application.yml` 增加 `example.*`、`morning-report.*` 等业务域段
+- 新增 `*Properties.java` + `@ConfigurationProperties`
+- `MyApplication` 增加 `@EnableConfigurationProperties` 新类
+- `spring.config.import` 引入外部配置
+
+## 拿不准时
+
+- 「优先放配置」**仅适用于白名单项**，**不得**作为新建 yml 或业务规则外置的理由。
+- 拿不准是否属于白名单 → **默认写 Java**，在方案中标注待确认，**禁止**先写 yml 再改。
+
+## 提交前速查（与 java-09 联动）
+
+- [ ] 未新增 yml 文件
+- [ ] 未改 application.yml（或改动仅限白名单且用户已知）
+- [ ] 未新增 ConfigurationProperties Bean
+- [ ] 节假日/模板/枚举语义均在 Java 中

@@ -5,7 +5,7 @@ import os
 import sys
 
 from . import targets as T
-from . import enforcers, experiment, history, launchd, status, task
+from . import enforcers, experiment, export, history, launchd, status, task
 from .config import read_violations, reviewers, trial_rules
 from .importer import ImportFailed, import_file
 from .model import duplicate_lines, fix_source, load_rules
@@ -314,6 +314,12 @@ def cmd_experiment(args):
     return 0
 
 
+def cmd_export(args):
+    count = export.export(resolve_source(args.source), os.path.expanduser(args.out))
+    print(f"已导出 {count} 个文件到 {args.out}（项目名已通用化，已扫描凭证）")
+    return 0
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="rulehub")
     p.add_argument("--source")
@@ -362,6 +368,9 @@ def main(argv=None):
     ex.add_argument("--note", default="")
     ex.add_argument("--days", type=int, default=30)
     ex.set_defaults(fn=cmd_experiment)
+    xp = sub.add_parser("export")
+    xp.add_argument("out")
+    xp.set_defaults(fn=cmd_export)
     ld = sub.add_parser("launchd")
     ld.add_argument("action", choices=["print", "install", "uninstall"])
     ld.set_defaults(fn=cmd_launchd)
@@ -378,7 +387,7 @@ def main(argv=None):
     args = p.parse_args(argv)
     try:
         return args.fn(args)
-    except (Fatal, T.GuardError, ImportFailed, task.TaskError, experiment.ExperimentError) as e:
+    except (Fatal, T.GuardError, ImportFailed, task.TaskError, experiment.ExperimentError, export.ExportError) as e:
         if args.cmd == "sync" and not args.dry_run:
             status.record(args.home, False, str(e).splitlines()[0])
         if getattr(args, "hook", False):

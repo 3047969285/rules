@@ -1,0 +1,40 @@
+---
+description: 按需 Java 提交前强制自检清单
+globs: "**/*.{java,xml}"
+alwaysApply: false
+---
+
+# 提交前强制自检（每次改动完成后逐条核查）
+
+## 代码质量
+- [ ] 所有新增/修改方法有 JavaDoc，第一行中文简述且无任何标点符号
+- [ ] 复杂逻辑方法体内有精简行注释解释意图；无废话注释、无占位注释
+- [ ] 无裸字面量魔术数字：离散命名集合→枚举（code/description/手写构造器），独立标量→private static final 常量
+- [ ] 无方法体内 `Pattern.compile()` 调用，正则全部为 `private static final Pattern` 类级常量
+- [ ] 无占位注释（`// ...`/`// (existing fields)` 等）代替实际代码
+- [ ] 集合转换聚合已用 Stream，无冗余 for 循环
+
+## 架构规范
+- [ ] 未跨层调用，未私自建顶层包
+- [ ] **无内部类/内部枚举/内部接口/局部类/方法内 record**（含为去重写的内部适配器）；载体与枚举已外置到 model 包
+- [ ] Service 接口 + Impl、Mapper + XML 齐全
+- [ ] XML 使用显式列名，无 `SELECT *`，动态 SQL 正确
+- [ ] POST/PUT 分组校验（ValidGroups.Create/Update）；返回均为统一响应体
+
+## 配置边界（`java-10-config-boundary` 强制）
+- [ ] **未新增**任何 `.yml`/`.yaml` 文件
+- [ ] **未修改** `application.yml` 增段、未加 `spring.config.import`、未在 `MyApplication` 注册新 `@ConfigurationProperties`（除非用户明确要求且属白名单）
+- [ ] 业务规则、节假日、模板类型、列索引等领域语义均在 Java 枚举/常量/Registry，**未**外置 yml
+- [ ] 账号/密码/外部地址/运营阈值若需外置，仅写入**既有** application.yml 白名单段，未硬编码
+
+## 产出物边界（`java-11-artifact-boundary` 强制）
+- [ ] **未新增/未修改** `src/test/**` 及任何 `*Test.java`（除非用户本轮明确要求写测试）
+- [ ] **未新增**过程 md、脚本、`.bak/.tmp`、Demo、未接入主流程的草稿
+- [ ] 改动范围仅为业务所需最少文件；无过程文件入库
+
+## 编译验证（强制，不得以主观判断代替）
+- [ ] **执行 `mvn compile`，确认 0 错误后方可认为改动完成**（不得以写入测试文件代替编译验证）
+
+---
+
+> 上述清单中任何一项未通过，必须修正后再声明完成。

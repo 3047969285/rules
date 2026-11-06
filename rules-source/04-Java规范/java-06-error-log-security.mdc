@@ -1,0 +1,26 @@
+---
+description: 【按需Read全文·防截断】Java 异常处理、日志、安全规范（强制）
+globs: "**/*.java"
+alwaysApply: false
+---
+
+# 异常规范
+- 可预检查的 NPE/越界等用 if 规避，禁止用 catch 代替
+- 禁止用异常做流程控制；catch 必须处理，禁止空吞
+- 事务内 catch 须考虑手动回滚；finally 优先 try-with-resources，禁止 finally return
+- **禁止** throw RuntimeException/Exception/Throwable；用项目业务异常（BizException/BusinessException）
+- 系统异常由全局处理器兜底，禁止新建第二套 RestControllerAdvice
+
+# 日志规范
+- 统一 SLF4J，使用 `@Slf4j`；禁止直接 Log4j/Logback API
+- debug/info 用 `{}` 占位符，**禁止字符串拼接**
+- 异常须带堆栈：`log.error("描述 {}", param, e)`
+- 用户参数错误用 warn，系统逻辑错误用 error
+- 不打印密码/token 等敏感信息；避免同一异常重复打日志
+
+# 安全规范
+- 个人数据须水平权限校验；敏感展示须脱敏
+- 所有外部入参须有效性校验；密码哈希存储
+- SQL 仅参数绑定，禁止拼接；`${}` 禁止拼接用户输入
+- 文件上传：校验类型/大小/文件名白名单（放枚举或常量）；路径 normalize 防穿越
+- 账号、密钥、外部地址、可调阈值不得硬编码，落点见 `java-10-config-boundary`

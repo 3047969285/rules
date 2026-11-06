@@ -1,0 +1,152 @@
+{
+  "java-01-arch": {
+    "hooks": [
+      "java_guard(写后): 内部类/枚举/接口"
+    ],
+    "manual": "分层调用链与复用判断靠审查"
+  },
+  "java-02-controller-service": {
+    "manual": "Controller 与 Service 职责靠审查"
+  },
+  "java-03-mapper-xml": {
+    "hooks": [
+      "java_guard(写前拦截): SELECT *、${}、WHERE 1=1、注解 SQL"
+    ],
+    "manual": "动态 SQL 写法靠审查"
+  },
+  "java-04-naming-constants": {
+    "manual": "命名与枚举/常量选择靠审查",
+    "gap": "可交给 Checkstyle 机检命名和魔法值 需在具体项目里配置"
+  },
+  "java-05-code-style": {
+    "hooks": [
+      "java_guard(写前拦截): 方法体内 Pattern.compile、new Thread/Executors、空 catch"
+    ],
+    "manual": "格式、集合、控制语句靠审查"
+  },
+  "java-06-error-log-security": {
+    "hooks": [
+      "java_guard(写前拦截): 抛 RuntimeException/Exception、日志字符串拼接"
+    ],
+    "manual": "安全校验靠审查"
+  },
+  "java-07-javadoc": {
+    "hooks": [
+      "java_guard(写后): 方法缺 JavaDoc、首行含标点"
+    ],
+    "manual": "方法内行注释质量靠审查"
+  },
+  "java-08-workflow": {
+    "manual": "先出方案再编码属流程判断 由 java-plan 技能和路由提示引导"
+  },
+  "java-09-checklist": {
+    "hooks": [
+      "stop_gate: 改 Maven/Gradle 工程里的 Java 后必须编译"
+    ]
+  },
+  "java-10-config-boundary": {
+    "hooks": [
+      "java_guard(写前询问): 新建 yml"
+    ],
+    "manual": "application.yml 白名单判断靠审查"
+  },
+  "java-11-artifact-boundary": {
+    "hooks": [
+      "java_guard(写前询问): 写测试文件"
+    ],
+    "manual": "过程文件和脚本靠审查；流水线任务的测试由阶段闸门放行"
+  },
+  "craft-excellence": {
+    "hooks": [
+      "stop_gate: Java 编译",
+      "evidence_gate(结束前): 有测试的项目改代码后必须跑过测试",
+      "rule_review(最便宜模型只读复核): 声称完成是否有对应验证"
+    ],
+    "manual": "质量标准本身靠自觉"
+  },
+  "code-first-facts": {
+    "hooks": [
+      "evidence_gate(结束前): 声称验证或完成必须有本轮工具证据",
+      "rule_review(最便宜模型只读复核): 结论是否有证据支撑"
+    ],
+    "manual": "读到什么再判断属认知纪律 只能抽查"
+  },
+  "reasoning-integrity": {
+    "manual": "证据与推理纪律 无法机检"
+  },
+  "solution-explanation-detail": {
+    "manual": "方案说明质量靠审查"
+  },
+  "00-architect-stance": {
+    "manual": "独立判断属认知纪律",
+    "hooks": [
+      "rule_review(最便宜模型只读复核): 是否与此前说过的话冲突或只是附和"
+    ]
+  },
+  "security-confidentiality": {
+    "hooks": [
+      "secret_guard(写前): 私钥、云与代码托管令牌直接拒绝；带密码的连接串、疑似明文口令询问",
+      "rule_review(最便宜模型只读复核): 回复里的凭证、内网地址、个人信息"
+    ],
+    "manual": "最小读取、不外传、个人信息脱敏靠自觉",
+    "gap": "内网地址与个人信息、Bash 命令里的凭证只有复核员抽查 没有确定性检查"
+  },
+  "00-core-digest": {
+    "manual": "总纲 由各分规则落实"
+  },
+  "competitive-collab": {
+    "manual": "复杂任务裁决属流程判断",
+    "hooks": [
+      "rule_review(最便宜模型只读复核): 含糊或不可逆的事是否先说出判断"
+    ]
+  },
+  "prompt-optimize": {
+    "hooks": [
+      "rule_router(每句话): 注入 role task 约束骨架 提醒整理"
+    ],
+    "manual": "角色、任务、约束由模型随任务自己判断 无法机检"
+  },
+  "reply-style-core": {
+    "manual": "回复风格靠自觉"
+  },
+  "cost-effective-models": {
+    "manual": "Cursor 选模型规则 在这里不适用"
+  },
+  "00-force-all-rules": {
+    "manual": "优先级与闸门总则 由具体规则和 hook 落实"
+  },
+  "00-rule-index": {
+    "manual": "路由说明文档"
+  },
+  "agent-exec-minimal": {
+    "manual": "直接交付流程靠自觉",
+    "hooks": [
+      "rule_review(最便宜模型只读复核): 是否越界或多出无关文件"
+    ]
+  },
+  "quality-gate-advisor": {
+    "manual": "交付复核靠自觉"
+  },
+  "chinese-only": {
+    "manual": "语言要求靠自觉"
+  },
+  "reply-style-girlfriend-pro": {
+    "manual": "风格偏好 按需加载"
+  },
+  "01-allow-explicit-intimacy": {
+    "manual": "风格边界说明 按需加载"
+  },
+  "java-12-pipeline": {
+    "hooks": [
+      "stage_gate(写前): 没建任务不得改第二个源文件，阶段未通过评审不得写测试或实现，清单外文件被拒",
+      "rulehub task: 产物结构校验、先红后绿记录、阶段只读评审"
+    ],
+    "manual": "难度判断是否合理靠评审员抽查"
+  },
+  "experiment": {
+    "hooks": [
+      "rulehub experiment: 试运行期间钩子只记日志不拦截；report 按裁决算精度并给转正或下线建议"
+    ],
+    "manual": "提出假设、记录裁决、决定转正靠自觉"
+  }
+}

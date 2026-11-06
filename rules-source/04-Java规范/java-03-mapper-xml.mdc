@@ -1,0 +1,25 @@
+---
+description: 【按需Read全文·防截断】Java Mapper 接口与 MyBatis XML SQL 规范（强制）
+globs: "**/*.{java,xml}"
+alwaysApply: false
+---
+
+# Mapper 与 MyBatis XML 规范
+
+## 基本要求
+- 每个 Mapper 在 `resources/mapper` 下有同名 XML，namespace 与 id 一致
+- SQL 写在 XML，**禁止**在 Mapper 接口用 `@Select/@Insert/@Update/@Delete` 承载业务 SQL
+- **禁止** `SELECT *` 或 `SELECT t.*`，须显式列名，多表列加别名
+
+## 动态 SQL
+- 可选条件与按需更新必须用动态标签
+- 字符串条件判 `!= null and xxx != ''`，数值/日期/布尔只判 `!= null`
+- 动态查询用 `<where>` 内全 `<if>`，**禁止** `WHERE 1=1`
+- 按需更新用 `<trim prefix="SET">` 或 `<set>`，每字段单独 `<if>`
+- 参数用 `#{}`，**禁止** `${}` 拼接用户输入
+
+## 其他
+- 更新必须带 where，防全表更新
+- 表名、字段小写；布尔库字段 `is_` 前缀
+- `count(*)` 统计行数；分页 count 为 0 时直接返回
+- 单表索引不超过 5 个，组合索引注意最左前缀

@@ -1,0 +1,31 @@
+---
+description: Cursor 里能自选模型时的性价比档，不改用户已选的 Auto 或具体模型；其它工具按各自的模型分工
+alwaysApply: false
+---
+
+# 性价比优先
+
+能自己选模型时，优先用性价比高的模型。用户已经选定具体模型，或选了 Auto 的 Cost、Balance、Intelligence 时，按用户的选择执行，不改选。
+
+本规则在所有时间、所有项目、所有已安装本规则体系的电脑上生效。安全、法律和用户本轮明确的相反指令优先。
+
+## 当前默认档
+
+榜单和标价会变。下面是 2026-10-14 按 Artificial Analysis、LMArena 和 Cursor 标价定下、并经用户确认的档。模型不在本会话可用列表里时，不要编造名字，改选列表里仍够用、标价更低的一个，并说明换成了哪个。
+
+- 短任务：Claude Haiku 5.5（medium）。输入超过 10 万 token 会按 5 倍计，长文不用它。
+- 中等任务：Muse Spark 1.3（max）。
+- 长任务：Gemini 3.8 Flash（high）。
+- 日常、且任务落在 Cursor 自有模型额度里：Composer 2.5，不开 Fast。需要更强时用 Grok 4.7，不开 Fast。
+
+不要为了速度默认开 Fast。用户明确要更快时才开。
+
+旗舰和快速加价档，包括 Claude Opus、Claude Fable、GPT-5.5，以及 Composer、Grok 的 Fast，只在用户点名时使用。
+
+## 长时间三开
+
+目标用量：每天约 7 小时连续跑，连续约半个月，三个项目同时开。
+
+这种跑法默认固定 Composer 2.5，不开 Fast。三个项目都用这一档。短确认可以用 Claude Haiku 5.5（medium）。不要用 Balance 扛这段，Balance 会把难请求分到更贵的模型。不要用 Muse Spark、Gemini 3.8 Flash、Grok 4.7 或旗舰档作为这三个长跑窗口的默认模型。
+
+用户本轮点名了别的模型或 Auto 时，仍然听用户的，并说明这档比 Composer 2.5 更费额度。
