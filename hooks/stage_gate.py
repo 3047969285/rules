@@ -3,7 +3,7 @@
 import json
 import sys
 
-from _cfg import enabled, log_violation
+from _cfg import enabled, log_violation, trial
 from rulehub.task import gate_decision
 
 
@@ -17,6 +17,8 @@ def main():
     result = gate_decision(path, data.get("session_id", "")) if path else None
     if result:
         log_violation("stage_gate", "java-12-pipeline", result[1].splitlines()[0][:120])
+        if trial("java-12-pipeline"):
+            return
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": result[0],
                                                   "permissionDecisionReason": "后端开发流水线闸门：" + result[1]}}, ensure_ascii=False))
 

@@ -740,6 +740,11 @@ class EvidenceGateTests(HookRunner, unittest.TestCase):
         self.assertIn("[code-first-facts] 没有读文件就下了结论", got["reason"])
         self.assertIn("裁决者", got["reason"])
         self.assertNotIn("不存在的规则", got["reason"])
+        self.assertIn("rulehub experiment verdict", got["reason"])
+
+    def test_gate_block_also_carries_the_verdict_command(self):
+        got = self.gate([U("验证过了吗"), SAY("已验证通过")])
+        self.assertIn("rulehub experiment verdict <规则id> upheld|rejected", got["reason"])
 
     def test_reviewer_clean_broken_or_disabled_never_blocks(self):
         turn = [U("看看"), USE("1", "Bash", command="ls"), RES("1"), SAY("两个文件")]

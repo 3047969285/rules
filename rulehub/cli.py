@@ -5,8 +5,8 @@ import os
 import sys
 
 from . import targets as T
-from . import enforcers, history, launchd, status, task
-from .config import read_violations, reviewers
+from . import enforcers, experiment, history, launchd, status, task
+from .config import read_violations, reviewers, trial_rules
 from .importer import ImportFailed, import_file
 from .model import duplicate_lines, fix_source, load_rules
 from .reviewer import render_agents
@@ -283,6 +283,37 @@ def cmd_enforcement(args):
     return 1 if args.strict and (missing or stale) else 0
 
 
+def cmd_experiment(args):
+    if args.action == "report":
+        trials = trial_rules()
+        stats = experiment.report(read_violations(args.days), trials)
+        if not stats:
+            print("还没有记录，也没有规则在试运行")
+            return 0
+        print(f"== 最近 {args.days} 天（试运行规则只统计开始之后）")
+        for rule, s in sorted(stats.items(), key=lambda kv: (not kv[1]["trial"], -kv[1]["triggers"])):
+            prec = "-" if s["precision"] is None else f"{s['precision']:.0%}"
+            state = "试运行" if s["trial"] else "正式"
+            print(f"  {state}  {rule}  触发 {s['triggers']}  采纳 {s['upheld']}  驳回 {s['rejected']}  待裁决 {s['pending']}  精度 {prec}"
+                  + (f"  → {s['advice']}" if s["advice"] else ""))
+        print(f"== 转正条件: 触发 ≥ {experiment.MIN_TRIGGERS} 且裁决 ≥ {experiment.MIN_VERDICTS} 且精度 ≥ {experiment.PROMOTE_PRECISION:.0%}；"
+              f"精度 < {experiment.RETIRE_PRECISION:.0%} 建议下线或改写")
+        return 0
+    if not args.rule:
+        raise experiment.ExperimentError("需要指定规则 id")
+    known = {r.id for r in load(args)[0]}
+    if args.action == "start":
+        experiment.start(args.rule, known)
+        print(f"{args.rule} 开始试运行：只记日志不拦截。用 rulehub experiment report 查看效果")
+    elif args.action == "stop":
+        experiment.stop(args.rule)
+        print(f"{args.rule} 已转正：恢复拦截")
+    else:
+        experiment.verdict(args.rule, args.outcome, args.note, known)
+        print(f"已记录 {args.rule} 的裁决：{experiment.OUTCOMES[args.outcome]}")
+    return 0
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="rulehub")
     p.add_argument("--source")
@@ -324,6 +355,13 @@ def main(argv=None):
     en = sub.add_parser("enforcement")
     en.add_argument("--strict", action="store_true")
     en.set_defaults(fn=cmd_enforcement)
+    ex = sub.add_parser("experiment")
+    ex.add_argument("action", choices=["start", "stop", "verdict", "report"])
+    ex.add_argument("rule", nargs="?")
+    ex.add_argument("outcome", nargs="?", choices=list(experiment.OUTCOMES))
+    ex.add_argument("--note", default="")
+    ex.add_argument("--days", type=int, default=30)
+    ex.set_defaults(fn=cmd_experiment)
     ld = sub.add_parser("launchd")
     ld.add_argument("action", choices=["print", "install", "uninstall"])
     ld.set_defaults(fn=cmd_launchd)
@@ -340,7 +378,7 @@ def main(argv=None):
     args = p.parse_args(argv)
     try:
         return args.fn(args)
-    except (Fatal, T.GuardError, ImportFailed, task.TaskError) as e:
+    except (Fatal, T.GuardError, ImportFailed, task.TaskError, experiment.ExperimentError) as e:
         if args.cmd == "sync" and not args.dry_run:
             status.record(args.home, False, str(e).splitlines()[0])
         if getattr(args, "hook", False):

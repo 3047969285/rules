@@ -5,7 +5,8 @@ import os
 import re
 import sys
 
-from _cfg import enabled, log_violation, reviewers
+from _cfg import enabled, log_violation, reviewers, trial
+from rulehub.experiment import VERDICT_HINT
 from _secrets import redact
 from rulehub.review_run import ask_reviewer, extract_json
 from rulehub.reviewer import IDS, instructions
@@ -152,16 +153,19 @@ def main():
     problem = evidence_problem(uses, final)
     if problem:
         log_violation("evidence_gate", problem[0], problem[1][:120])
-        block("证据闸门（规则 " + problem[0] + "）：" + problem[1])
-        return
+        if not trial(problem[0]):
+            block("证据闸门（规则 " + problem[0] + "）：" + problem[1] + "\n" + VERDICT_HINT)
+            return
     if not enabled("rule_review") or not (uses or find_claim(final)):
         return
     model, findings = review(prompt, uses, results, final)
     if findings:
         for rule, evidence in findings:
             log_violation("rule_review", rule, evidence)
-        block(f"独立复核（{model}，只读）对照你的规则发现疑似违规。请你作为裁决者逐条判断：属实就先改正再结束；不属实用一句话说明理由后结束。\n"
-              + "\n".join(f"- [{rule}] {evidence}" for rule, evidence in findings))
+        enforced = [(rule, evidence) for rule, evidence in findings if not trial(rule)]
+        if enforced:
+            block(f"独立复核（{model}，只读）对照你的规则发现疑似违规。请你作为裁决者逐条判断：属实就先改正再结束；不属实用一句话说明理由后结束。\n"
+                  + "\n".join(f"- [{rule}] {evidence}" for rule, evidence in enforced) + "\n" + VERDICT_HINT)
 
 
 main()

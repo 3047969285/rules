@@ -5,7 +5,8 @@ import os
 import re
 import sys
 
-from _cfg import enabled
+from _cfg import enabled, read_violations, trial_rules
+from rulehub import experiment
 
 JAVA = r"(?<![A-Za-z])[Jj]ava(?![A-Za-z])|\.java\b|Spring ?Boot|[Mm]y[Bb]atis|[Mm]apper"
 ROUTES = [
@@ -34,6 +35,11 @@ def sync_warning():
     return "" if st.get("ok", True) else "\n【注意】上次规则同步失败，当前规则可能不是最新: " + str(st.get("message", ""))[:120]
 
 
+def experiment_notice():
+    stamp = os.path.join(os.environ.get("RULEHUB_CACHE") or os.path.expanduser("~/.cache/rulehub"), "experiment_notice")
+    return experiment.notice(read_violations(), trial_rules(), stamp)
+
+
 def scaffold():
     return (
         "\n【提示词整理】按下面结构在内部整理本句再执行，默认不贴回聊天；简单问题只留 #task。\n"
@@ -53,7 +59,7 @@ def main():
             seen.add(skill)
             hits.append((skill, f"- 先用 Skill 工具加载 {skill}（{why}），再动手"))
     msg = BASE + ("\n命中按任务技能:\n" + "\n".join(h[1] for h in hits) if hits else "")
-    msg += scaffold() + sync_warning()
+    msg += scaffold() + sync_warning() + experiment_notice()
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": msg}}, ensure_ascii=False))
 
 

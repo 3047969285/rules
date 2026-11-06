@@ -51,6 +51,16 @@
 ### `rulehub violations [--days N]`
 汇总违规与拦截记录（`~/.local/share/rulehub/violations.jsonl`，默认最近 30 天）：按规则、按来源统计，并指出两类候选——「靠自觉却被闸门或复核抓到」的规则应升级为机器检查，「有机器执行者却长期从未触发」的规则可考虑精简。记录里不含凭证和文件内容，只有拦截类型的简短说明。
 
+### `rulehub experiment start|stop|verdict|report`：规则试运行
+- `start RULE`：规则开始试运行，写入 `~/.config/rulehub/config.json` 的 `experimental`（保留其他配置）。试运行的规则所有钩子只记日志（带 `trial` 标记），不拦截、不提醒；同一文件里其他规则不受影响。规则 id 不存在或已在试运行时报错。
+- `stop RULE`：转正，恢复拦截。
+- `verdict RULE upheld|rejected [--note 理由]`：记录你对复核或闸门意见的裁决，属实记 `upheld`，不属实记 `rejected`。裁决也写入违规日志（来源 `verdict`），不算触发次数。
+- `report [--days N]`：按规则列出触发、采纳、驳回、待裁决、精度。待裁决 = 复核员与证据闸门提出的意见数减去已记录的裁决数，用来发现没人裁决的意见。试运行规则只统计开始之后的记录，并给建议：触发 ≥ 10 且裁决 ≥ 5 且精度 ≥ 80% 为「可转正」，裁决 ≥ 5 且精度 < 50% 为「建议下线或改写」，其余「继续观察」。正式规则只列数字不给建议。
+
+闭环三处：复核与证据闸门的拦截文本末尾附记录裁决的命令；报告显示待裁决数；会话开始时（路由钩子）若有试运行规则可转正或建议下线，提示一次，24 小时内不重复，时间戳存 `~/.cache/rulehub/experiment_notice`，没有可决定的不打扰。
+
+涉及密钥的 `security-confidentiality` 也可以试运行，但试运行期间该规则的拦截全部失效，仅在用户明确要求时使用。
+
 ### `rulehub task <动作>`：后端开发流水线
 文档和状态存放在固态 `devdocs_root`（默认 `/Volumes/Games/Projects/DevDocs`，可在配置里改），每个任务一个目录 `<项目>/<时间-任务名>/`，不进项目仓库。动作：
 

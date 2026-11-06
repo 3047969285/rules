@@ -6,10 +6,13 @@ import time
 DEFAULT_REVIEWERS = {"claude": "haiku", "codex": "gpt-6-luna", "cursor": "composer-2.5"}
 
 
+def config_path():
+    return os.environ.get("RULEHUB_CONFIG") or os.path.expanduser("~/.config/rulehub/config.json")
+
+
 def config():
-    path = os.environ.get("RULEHUB_CONFIG") or os.path.expanduser("~/.config/rulehub/config.json")
     try:
-        with open(path, encoding="utf-8") as f:
+        with open(config_path(), encoding="utf-8") as f:
             data = json.load(f)
         return data if isinstance(data, dict) else {}
     except (OSError, ValueError):
@@ -22,6 +25,17 @@ def enabled(name):
         return False
     hooks = config().get("hooks", {})
     return not (isinstance(hooks, dict) and hooks.get(name) is False)
+
+
+def trial_rules():
+    """试运行中的规则到开始时间 键 config.json 的 experimental"""
+    exp = config().get("experimental")
+    return exp if isinstance(exp, dict) else {}
+
+
+def trial(rule):
+    """试运行中的规则只记录不拦截"""
+    return rule in trial_rules()
 
 
 def in_scope(path, key="java_scope"):
@@ -56,8 +70,11 @@ def log_violation(hook, rule, detail=""):
     try:
         path = violations_path()
         os.makedirs(os.path.dirname(path), exist_ok=True)
+        row = {"t": time.time(), "hook": hook, "rule": rule, "detail": detail[:200], "cwd": os.getcwd()}
+        if trial(rule):
+            row["trial"] = True
         with open(path, "a", encoding="utf-8") as f:
-            f.write(json.dumps({"t": time.time(), "hook": hook, "rule": rule, "detail": detail[:200], "cwd": os.getcwd()}, ensure_ascii=False) + "\n")
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
     except OSError:
         pass
 
