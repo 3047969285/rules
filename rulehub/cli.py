@@ -5,7 +5,7 @@ import os
 import sys
 
 from . import targets as T
-from . import enforcers, experiment, export, history, launchd, status, task
+from . import enforcers, experiment, export, history, launchd, package, status, task
 from .config import read_violations, reviewers, trial_rules
 from .importer import ImportFailed, import_file
 from .model import duplicate_lines, fix_source, load_rules
@@ -320,6 +320,22 @@ def cmd_export(args):
     return 0
 
 
+def cmd_package(args):
+    rules, _ = load(args)
+    src = resolve_source(args.source)
+    out = os.path.abspath(os.path.expanduser(args.out))
+    files = package.build_files(rules, reviewers())
+    if args.check:
+        problems = package.check(out, files)
+        for problem in problems:
+            print(problem)
+        print("通过" if not problems else f"发现 {len(problems)} 个问题")
+        return 1 if problems else 0
+    report = package.generate(src, out, files, args.dry_run)
+    print(f"{'将生成' if args.dry_run else '已生成'} {report['written']} 个文件，{report['unchanged']} 个未变: {out}")
+    return 0
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="rulehub")
     p.add_argument("--source")
@@ -372,6 +388,12 @@ def main(argv=None):
     xp.add_argument("out")
     xp.add_argument("--extra", action="append", default=[], help="规则源之外要一起导出的文件 可重复")
     xp.set_defaults(fn=cmd_export)
+    pk = sub.add_parser("package")
+    pk.add_argument("out", help="安装包输出目录 必须在规则源目录之外")
+    mode = pk.add_mutually_exclusive_group()
+    mode.add_argument("--dry-run", action="store_true", help="只检查目标并报告预计文件数")
+    mode.add_argument("--check", action="store_true", help="只比较安装包与当前规则源 不写入")
+    pk.set_defaults(fn=cmd_package)
     ld = sub.add_parser("launchd")
     ld.add_argument("action", choices=["print", "install", "uninstall"])
     ld.set_defaults(fn=cmd_launchd)
@@ -388,7 +410,7 @@ def main(argv=None):
     args = p.parse_args(argv)
     try:
         return args.fn(args)
-    except (Fatal, T.GuardError, ImportFailed, task.TaskError, experiment.ExperimentError, export.ExportError) as e:
+    except (Fatal, T.GuardError, ImportFailed, task.TaskError, experiment.ExperimentError, export.ExportError, package.PackageError) as e:
         if args.cmd == "sync" and not args.dry_run:
             status.record(args.home, False, str(e).splitlines()[0])
         if getattr(args, "hook", False):

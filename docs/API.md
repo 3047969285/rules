@@ -81,6 +81,26 @@
 
 产物校验：`prd.md` 必须填写规定的各节（标准 8 节，小 4 节）；`api.md` 必须有「接口清单」「新增与修改文件清单」「事务与并发」「错误码与异常」且出现 路径、方法、参数、校验、响应、状态码、鉴权、幂等；`test-plan.md` 必须覆盖九个维度（正常、边界、异常、权限、并发、幂等、数据一致性、安全、性能，小难度只要求前三个），每个维度有用例或写明「不适用：理由」。
 
+### `rulehub package OUT [--dry-run | --check]`
+
+从唯一 `.mdc` 规则源生成可分发安装包，输出目录必须在规则源目录之外：
+
+```text
+OUT/
+  Mac/{codex,Claude,cursor}/
+  Windows/{codex,Claude,cursor}/
+```
+
+各工具子目录按原生结构保存文件，并带 `INSTALL.md`；Codex 提供可合并的 `AGENTS.rulehub.md` 受管区块，Cursor 同时提供项目规则和用户规则粘贴稿。平台目录中的规则内容来自同一规则源，安装路径说明按 macOS/Windows 区分。规则源之外手工维护的适配文件不会自动包含。
+
+| 参数 | 说明 |
+|---|---|
+| `OUT` | 安装包根目录；非空且没有 `.rulehub-package.json` 所有权标记时拒绝覆盖 |
+| `--dry-run` | 不写入，只报告预计生成文件数 |
+| `--check` | 只比较输出文件与当前规则源，漂移或缺失时退出码为 1 |
+
+重新运行会更新由本工具管理的整个安装包目录；不要在该目录存放个人文件或手改生成内容。源规则不会被改动。
+
 ### `rulehub history` 与 `rulehub restore SNAPSHOT --yes`
 每次 `sync` 前，规则源内容有变化就自动存一份快照到 `~/.local/share/rulehub/snapshots/`（在 iCloud 之外，保留最近 30 份）。`history` 列出快照（最新在前）。`restore` 把规则源的 `.mdc` 恢复到该快照，会先给当前状态再存一份保险快照，并删除快照里没有的 `.mdc`；必须带 `--yes`。恢复后运行 `sync`。
 

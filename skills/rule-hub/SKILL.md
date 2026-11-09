@@ -6,6 +6,7 @@ description: 维护或排查用户的规则体系时使用，包括同步规则�
 规则源是 `.mdc` 目录（默认 iCloud `Documents/规则体系`），改规则只改源，不改生成物。命令在插件目录下，用 `python3 "${CLAUDE_PLUGIN_ROOT}/bin/rulehub"` 调用：
 
 - 同步：`sync`，加 `--dry-run` 只看不写；Cursor 项目规则加 `--target cursor --project <项目目录>`
+- 生成跨平台安装包：`package <输出目录>`，生成 Mac/Windows × codex/Claude/cursor 六个目录；输出放在规则源之外，可加 `--dry-run` 预览或 `--check` 校验
 - 检查生成物是否与源一致且结构合法：`check`，有问题退出码非零
 - 检查规则源格式、引用和重复：`lint --dups`，`lint --fix` 只规范化格式
 - 查看分类：`list`
